@@ -3,7 +3,6 @@ use relm4::prelude::*;
 
 use crate::backend::{error::BackendError, fan::{self, FanProfile}};
 
-/// Fan profile page component.
 pub struct FanPage {
     current_profile: FanProfile,
     cpu_temp: Option<f64>,
@@ -50,7 +49,7 @@ impl SimpleComponent for FanPage {
                         "Quiet",
                     ])),
                     #[watch]
-                    set_selected: model.current_profile.as_raw() as u32,
+                    set_selected: model.current_profile as u32,
                     connect_selected_notify[sender] => move |row| {
                         sender.input(FanInput::SetProfile(row.selected()));
                     },

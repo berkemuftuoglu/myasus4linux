@@ -14,7 +14,6 @@ pub enum FanProfile {
 }
 
 impl FanProfile {
-    /// Convert a raw sysfs integer to a `FanProfile`.
     pub fn from_raw(value: u8) -> Result<Self, BackendError> {
         match value {
             0 => Ok(Self::Balanced),
@@ -24,12 +23,6 @@ impl FanProfile {
         }
     }
 
-    /// Return the raw sysfs integer for this profile.
-    pub fn as_raw(self) -> u8 {
-        self as u8
-    }
-
-    /// Human-readable label for the profile.
     pub fn label(self) -> &'static str {
         match self {
             Self::Balanced => "Balanced",
@@ -39,13 +32,6 @@ impl FanProfile {
     }
 }
 
-impl std::fmt::Display for FanProfile {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.label())
-    }
-}
-
-/// Read the current fan profile from sysfs.
 pub fn read_profile() -> Result<FanProfile, BackendError> {
     let raw: u8 = sysfs::read_value(detect::THROTTLE_THERMAL_POLICY)?;
     FanProfile::from_raw(raw)
@@ -70,11 +56,10 @@ pub fn read_cpu_temp() -> Option<f64> {
     None
 }
 
-/// Set the fan profile via privileged write.
 pub fn set_profile(profile: FanProfile) -> Result<(), BackendError> {
     sysfs::write_privileged(
         detect::THROTTLE_THERMAL_POLICY,
-        &profile.as_raw().to_string(),
+        &(profile as u8).to_string(),
     )
 }
 
@@ -86,7 +71,7 @@ mod tests {
     fn fan_profile_roundtrip() {
         for raw in 0..=2u8 {
             let profile = FanProfile::from_raw(raw).expect("valid profile");
-            assert_eq!(profile.as_raw(), raw);
+            assert_eq!(profile as u8, raw);
         }
     }
 

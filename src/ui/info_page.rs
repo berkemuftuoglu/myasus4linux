@@ -3,8 +3,6 @@ use relm4::prelude::*;
 
 use crate::backend::sysfs;
 
-/// System information page component.
-///
 /// Displays static hardware and OS information gathered at startup from
 /// `/proc`, `/sys`, and standard system files.
 pub struct InfoPage {

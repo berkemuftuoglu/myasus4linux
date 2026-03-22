@@ -2,13 +2,10 @@ use super::detect;
 use super::error::BackendError;
 use super::sysfs;
 
-/// Read the current keyboard backlight brightness (0-3).
 pub fn read_brightness() -> Result<u8, BackendError> {
     sysfs::read_value(detect::KBD_BACKLIGHT)
 }
 
-/// Set the keyboard backlight brightness.
-///
 /// # Safeguards
 /// - Values above 3 are rejected (`InvalidBrightness`).
 /// - Uses pkexec for privilege escalation.
@@ -20,7 +17,6 @@ pub fn set_brightness(value: u8) -> Result<(), BackendError> {
     sysfs::write_privileged(detect::KBD_BACKLIGHT, &value.to_string())
 }
 
-/// Human-readable label for a keyboard brightness level.
 pub fn brightness_label(value: u8) -> &'static str {
     match value {
         0 => "Off",

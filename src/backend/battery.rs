@@ -36,28 +36,18 @@ impl HealthStatus {
     }
 }
 
-impl std::fmt::Display for HealthStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.label())
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct BatteryInfo {
-    /// Current charge percentage (0-100).
     pub capacity: u8,
-    /// Charging status string (e.g. "Charging", "Discharging", "Full").
+    /// E.g. "Charging", "Discharging", "Full".
     pub status: String,
-    /// Battery health as a percentage of design capacity.
     pub health_percent: f64,
-    /// Number of charge cycles completed.
     pub cycle_count: Option<u32>,
     pub charge_threshold: Option<u8>,
     pub voltage_mv: Option<u32>,
     pub current_ma: Option<i32>,
 }
 
-/// Read all available battery information from sysfs.
 pub fn read_battery_info() -> Result<BatteryInfo, BackendError> {
     let capacity: u8 = sysfs::read_value(detect::BAT_CAPACITY)?;
     let status = sysfs::read(detect::BAT_STATUS)?;

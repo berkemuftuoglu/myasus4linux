@@ -3,7 +3,6 @@ use relm4::prelude::*;
 
 use crate::backend::{error::BackendError, keyboard};
 
-/// Keyboard backlight page component.
 pub struct KeyboardPage {
     brightness: u8,
 }

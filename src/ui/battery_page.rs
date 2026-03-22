@@ -3,7 +3,6 @@ use relm4::prelude::*;
 
 use crate::backend::{battery, error::BackendError};
 
-/// Battery page component showing charge info and charge limit control.
 pub struct BatteryPage {
     capacity: u8,
     status: String,
@@ -60,7 +59,7 @@ impl SimpleComponent for BatteryPage {
                     set_subtitle: &format!(
                         "{:.1}% ({})",
                         model.health_percent,
-                        battery::HealthStatus::from_percent(model.health_percent),
+                        battery::HealthStatus::from_percent(model.health_percent).label(),
                     ),
                 },
 

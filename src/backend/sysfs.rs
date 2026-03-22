@@ -4,12 +4,11 @@ use std::process::Command;
 
 use super::error::BackendError;
 
-/// Check whether a sysfs path exists.
 pub fn exists(path: &str) -> bool {
     Path::new(path).exists()
 }
 
-/// Read the full contents of a sysfs file, trimming whitespace.
+/// Trims trailing whitespace (sysfs files typically end with a newline).
 pub fn read(path: &str) -> Result<String, BackendError> {
     fs::read_to_string(path)
         .map(|s| s.trim().to_owned())
