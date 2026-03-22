@@ -6,12 +6,13 @@ use crate::backend::{error::BackendError, fan::{self, FanProfile}};
 /// Fan profile page component.
 pub struct FanPage {
     current_profile: FanProfile,
+    cpu_temp: Option<f64>,
 }
 
 #[derive(Debug)]
 pub enum FanInput {
     LoadProfile,
-    ProfileLoaded(FanProfile),
+    ProfileLoaded(FanProfile, Option<f64>),
     SetProfile(u32),
     ProfileWritten(Result<(), BackendError>),
     ReadError(String),
@@ -56,9 +57,10 @@ impl SimpleComponent for FanPage {
                 },
 
                 adw::ActionRow {
-                    set_title: "Current Mode",
+                    set_title: "CPU Temperature",
                     #[watch]
-                    set_subtitle: model.current_profile.label(),
+                    set_subtitle: &model.cpu_temp
+                        .map_or("Unknown".to_owned(), |t| format!("{t:.0}°C")),
                 },
             },
         }
@@ -71,6 +73,7 @@ impl SimpleComponent for FanPage {
     ) -> ComponentParts<Self> {
         let model = FanPage {
             current_profile: FanProfile::Balanced,
+            cpu_temp: None,
         };
 
         let widgets = view_output!();
@@ -88,14 +91,15 @@ impl SimpleComponent for FanPage {
                 let input_sender = sender.input_sender().clone();
                 std::thread::spawn(move || {
                     let msg = match fan::read_profile() {
-                        Ok(profile) => FanInput::ProfileLoaded(profile),
+                        Ok(profile) => FanInput::ProfileLoaded(profile, fan::read_cpu_temp()),
                         Err(e) => FanInput::ReadError(e.to_string()),
                     };
                     input_sender.send(msg);
                 });
             }
-            FanInput::ProfileLoaded(profile) => {
+            FanInput::ProfileLoaded(profile, temp) => {
                 self.current_profile = profile;
+                self.cpu_temp = temp;
             }
             FanInput::SetProfile(index) => {
                 let raw = index as u8;

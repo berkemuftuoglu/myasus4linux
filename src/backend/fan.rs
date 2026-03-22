@@ -51,6 +51,25 @@ pub fn read_profile() -> Result<FanProfile, BackendError> {
     FanProfile::from_raw(raw)
 }
 
+/// Find the CPU thermal zone and return its temp in degrees C.
+/// Scans /sys/class/thermal/thermal_zone*/type for known CPU zone names.
+pub fn read_cpu_temp() -> Option<f64> {
+    let thermal = std::path::Path::new("/sys/class/thermal");
+    let cpu_zone_names = ["x86_pkg_temp", "TCPU", "acpitz", "coretemp"];
+
+    let entries = std::fs::read_dir(thermal).ok()?;
+    for entry in entries.flatten() {
+        let zone = entry.path();
+        let zone_type = std::fs::read_to_string(zone.join("type")).ok()?;
+        if cpu_zone_names.iter().any(|name| zone_type.trim() == *name) {
+            let raw = std::fs::read_to_string(zone.join("temp")).ok()?;
+            let millideg: f64 = raw.trim().parse().ok()?;
+            return Some(millideg / 1000.0);
+        }
+    }
+    None
+}
+
 /// Set the fan profile via privileged write.
 pub fn set_profile(profile: FanProfile) -> Result<(), BackendError> {
     sysfs::write_privileged(
