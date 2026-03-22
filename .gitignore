@@ -1,0 +1,32 @@
+# Rust / Cargo
+/target/
+**/*.rs.bk
+
+# Meson build directory
+/build/
+/builddir/
+/_build/
+/subprojects/
+
+# Flatpak
+/.flatpak-builder/
+/repo/
+*.flatpak
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.*
+
+# Claude Code project instructions (not shipped)
+CLAUDE.md

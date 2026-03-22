@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/software/polkit/policyconfig-1.dtd">
+<policyconfig>
+
+  <vendor>myasus4linux</vendor>
+  <vendor_url>https://github.com/berkmuftuoglu/myasus4linux</vendor_url>
+
+  <!-- Battery charge threshold writes -->
+  <action id="io.github.berkmuftuoglu.MyAsus4Linux.Helper.SetChargeThreshold">
+    <description>Set battery charge threshold</description>
+    <message>Authentication is required to change the battery charge threshold</message>
+    <icon_name>battery-symbolic</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+
+  <!-- Fan / performance profile writes -->
+  <action id="io.github.berkmuftuoglu.MyAsus4Linux.Helper.SetPerformanceProfile">
+    <description>Set ASUS performance profile</description>
+    <message>Authentication is required to change the performance profile</message>
+    <icon_name>preferences-system-power-symbolic</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+
+  <!-- Keyboard backlight writes -->
+  <action id="io.github.berkmuftuoglu.MyAsus4Linux.Helper.SetKeyboardBacklight">
+    <description>Set keyboard backlight brightness</description>
+    <message>Authentication is required to change the keyboard backlight</message>
+    <icon_name>input-keyboard-symbolic</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+
+</policyconfig>

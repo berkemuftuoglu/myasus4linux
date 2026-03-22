@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>@APP_ID@</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+
+  <name>MyASUS for Linux</name>
+  <summary>Open source replacement for ASUS MyASUS on Linux</summary>
+  <description>
+    <p>
+      MyASUS for Linux provides battery care, fan profile management,
+      keyboard backlight control, and system information for ASUS notebooks
+      running Linux. It reads and writes sysfs attributes exposed by the
+      asus-nb-wmi kernel driver.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">@APP_ID@.desktop</launchable>
+
+  <url type="homepage">https://github.com/berkmuftuoglu/myasus4linux</url>
+  <url type="bugtracker">https://github.com/berkmuftuoglu/myasus4linux/issues</url>
+
+  <developer id="io.github.berkmuftuoglu">
+    <name>Berk Muftuoglu</name>
+  </developer>
+
+  <content_rating type="oars-1.1" />
+
+  <releases>
+    <release version="0.1.0" date="2026-03-22">
+      <description>
+        <p>Initial release with battery care, fan profiles, keyboard backlight, and system info.</p>
+      </description>
+    </release>
+  </releases>
+
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+
+  <recommends>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </recommends>
+</component>
