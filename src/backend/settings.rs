@@ -45,3 +45,47 @@ pub fn save(settings: &Settings) -> std::io::Result<()> {
         .expect("settings should always serialize");
     std::fs::write(&path, content)
 }
+
+const SERVICE_NAME: &str = "myasus4linux-charge-limit.service";
+const SERVICE_PATH: &str = "/etc/systemd/system/myasus4linux-charge-limit.service";
+
+pub fn boot_service_installed() -> bool {
+    std::path::Path::new(SERVICE_PATH).exists()
+}
+
+/// Installs and enables the systemd service that restores the charge limit on boot.
+/// Uses pkexec so the user gets one password prompt.
+pub fn install_boot_service() -> Result<(), String> {
+    let service_content = include_str!("../../data/systemd/myasus4linux-charge-limit.service");
+
+    // Write service file via pkexec tee
+    let mut child = std::process::Command::new("pkexec")
+        .args(["tee", SERVICE_PATH])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+
+    if let Some(ref mut stdin) = child.stdin {
+        use std::io::Write;
+        stdin.write_all(service_content.as_bytes())
+            .map_err(|e| e.to_string())?;
+    }
+
+    let status = child.wait().map_err(|e| e.to_string())?;
+    if !status.success() {
+        return Err("failed to write service file".to_owned());
+    }
+
+    // Enable the service
+    let enable = std::process::Command::new("pkexec")
+        .args(["systemctl", "enable", SERVICE_NAME])
+        .status()
+        .map_err(|e| e.to_string())?;
+
+    if enable.success() {
+        Ok(())
+    } else {
+        Err("failed to enable service".to_owned())
+    }
+}

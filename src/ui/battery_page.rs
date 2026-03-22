@@ -188,6 +188,10 @@ impl SimpleComponent for BatteryPage {
                         let mut s = settings::load();
                         s.charge_threshold = self.charge_threshold;
                         let _ = settings::save(&s);
+
+                        if !settings::boot_service_installed() {
+                            let _ = settings::install_boot_service();
+                        }
                     }
                     Err(e) => {
                         let _ = sender.output(BatteryOutput::Error(e.to_string()));
