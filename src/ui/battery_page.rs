@@ -1,7 +1,7 @@
 use adw::prelude::*;
 use relm4::prelude::*;
 
-use crate::backend::{battery, error::BackendError};
+use crate::backend::{battery, error::BackendError, settings};
 
 pub struct BatteryPage {
     capacity: u8,
@@ -130,12 +130,13 @@ impl SimpleComponent for BatteryPage {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
+        let saved = settings::load();
         let model = BatteryPage {
             capacity: 0,
             status: "Loading...".to_owned(),
             health_percent: 100.0,
             cycle_count: None,
-            charge_threshold: battery::THRESHOLD_DEFAULT,
+            charge_threshold: saved.charge_threshold,
             voltage_mv: None,
             current_ma: None,
         };
@@ -182,8 +183,15 @@ impl SimpleComponent for BatteryPage {
                 });
             }
             BatteryInput::ThresholdWritten(result) => {
-                if let Err(e) = result {
-                    let _ = sender.output(BatteryOutput::Error(e.to_string()));
+                match result {
+                    Ok(()) => {
+                        let mut s = settings::load();
+                        s.charge_threshold = self.charge_threshold;
+                        let _ = settings::save(&s);
+                    }
+                    Err(e) => {
+                        let _ = sender.output(BatteryOutput::Error(e.to_string()));
+                    }
                 }
             }
             BatteryInput::ReadError(msg) => {
