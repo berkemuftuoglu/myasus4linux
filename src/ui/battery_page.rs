@@ -83,16 +83,25 @@ impl SimpleComponent for BatteryPage {
                     #[watch]
                     set_value: f64::from(model.charge_threshold),
                     set_adjustment: Some(&gtk::Adjustment::new(
-                        80.0,   // default
-                        40.0,   // min (safeguard: never below 40)
-                        100.0,  // max
-                        1.0,    // step
-                        5.0,    // page step
-                        0.0,    // page size
+                        80.0, 40.0, 100.0, 1.0, 5.0, 0.0,
                     )),
                     connect_value_notify[sender] => move |row| {
                         sender.input(BatteryInput::SetChargeThreshold(row.value() as u8));
                     },
+                },
+            },
+
+            adw::PreferencesGroup {
+                #[watch]
+                set_visible: model.charge_threshold >= 100,
+
+                adw::ActionRow {
+                    set_title: "Warning",
+                    set_subtitle: "Keeping battery at 100% reduces its lifespan",
+                    add_prefix = &gtk::Image {
+                        set_icon_name: Some("dialog-warning-symbolic"),
+                    },
+                    add_css_class: "warning",
                 },
             },
         }
