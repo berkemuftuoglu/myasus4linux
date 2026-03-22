@@ -60,7 +60,7 @@ impl SimpleComponent for BatteryPage {
                     set_subtitle: &format!(
                         "{:.1}% ({})",
                         model.health_percent,
-                        battery::health_label(model.health_percent),
+                        battery::HealthStatus::from_percent(model.health_percent),
                     ),
                 },
 
@@ -99,7 +99,10 @@ impl SimpleComponent for BatteryPage {
                     #[watch]
                     set_value: f64::from(model.charge_threshold),
                     set_adjustment: Some(&gtk::Adjustment::new(
-                        80.0, 40.0, 100.0, 1.0, 5.0, 0.0,
+                        f64::from(battery::THRESHOLD_DEFAULT),
+                        f64::from(battery::THRESHOLD_MIN),
+                        f64::from(battery::THRESHOLD_MAX),
+                        1.0, 5.0, 0.0,
                     )),
                     connect_value_notify[sender] => move |row| {
                         sender.input(BatteryInput::SetChargeThreshold(row.value() as u8));
@@ -133,7 +136,7 @@ impl SimpleComponent for BatteryPage {
             status: "Loading...".to_owned(),
             health_percent: 100.0,
             cycle_count: None,
-            charge_threshold: 80,
+            charge_threshold: battery::THRESHOLD_DEFAULT,
             voltage_mv: None,
             current_ma: None,
         };

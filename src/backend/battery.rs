@@ -2,7 +2,46 @@ use super::detect;
 use super::error::BackendError;
 use super::sysfs;
 
-/// Snapshot of current battery information.
+pub const THRESHOLD_MIN: u8 = 40;
+pub const THRESHOLD_MAX: u8 = 100;
+pub const THRESHOLD_DEFAULT: u8 = 80;
+
+const HEALTH_GOOD: f64 = 80.0;
+const HEALTH_FAIR: f64 = 50.0;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HealthStatus {
+    Good,
+    Fair,
+    ReplaceSoon,
+}
+
+impl HealthStatus {
+    pub fn from_percent(health: f64) -> Self {
+        if health >= HEALTH_GOOD {
+            Self::Good
+        } else if health >= HEALTH_FAIR {
+            Self::Fair
+        } else {
+            Self::ReplaceSoon
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Good => "Good",
+            Self::Fair => "Fair",
+            Self::ReplaceSoon => "Replace soon",
+        }
+    }
+}
+
+impl std::fmt::Display for HealthStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.label())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct BatteryInfo {
     /// Current charge percentage (0-100).
@@ -55,32 +94,14 @@ pub fn read_battery_info() -> Result<BatteryInfo, BackendError> {
     })
 }
 
-/// Set the battery charge end threshold.
-///
-/// # Safeguards
-/// - Values below 40 are rejected (`InvalidThreshold`).
-/// - Values above 100 are rejected (`InvalidThreshold`).
-/// - Uses pkexec for privilege escalation.
 pub fn set_charge_threshold(value: u8) -> Result<(), BackendError> {
-    if !(40..=100).contains(&value) {
+    if !(THRESHOLD_MIN..=THRESHOLD_MAX).contains(&value) {
         return Err(BackendError::InvalidThreshold(value));
     }
-
     sysfs::write_privileged(
         detect::CHARGE_CONTROL_END_THRESHOLD,
         &value.to_string(),
     )
-}
-
-/// Return a plain-English health label based on health percentage.
-pub fn health_label(health_percent: f64) -> &'static str {
-    if health_percent >= 80.0 {
-        "Good"
-    } else if health_percent >= 50.0 {
-        "Fair"
-    } else {
-        "Replace soon"
-    }
 }
 
 #[cfg(test)]
@@ -100,9 +121,9 @@ mod tests {
     }
 
     #[test]
-    fn health_labels() {
-        assert_eq!(health_label(95.0), "Good");
-        assert_eq!(health_label(65.0), "Fair");
-        assert_eq!(health_label(30.0), "Replace soon");
+    fn health_status() {
+        assert_eq!(HealthStatus::from_percent(95.0), HealthStatus::Good);
+        assert_eq!(HealthStatus::from_percent(65.0), HealthStatus::Fair);
+        assert_eq!(HealthStatus::from_percent(30.0), HealthStatus::ReplaceSoon);
     }
 }
