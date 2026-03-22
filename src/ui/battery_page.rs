@@ -10,6 +10,8 @@ pub struct BatteryPage {
     health_percent: f64,
     cycle_count: Option<u32>,
     charge_threshold: u8,
+    voltage_mv: Option<u32>,
+    current_ma: Option<i32>,
 }
 
 #[derive(Debug)]
@@ -60,6 +62,20 @@ impl SimpleComponent for BatteryPage {
                         model.health_percent,
                         battery::health_label(model.health_percent),
                     ),
+                },
+
+                adw::ActionRow {
+                    set_title: "Voltage",
+                    #[watch]
+                    set_subtitle: &model.voltage_mv
+                        .map_or("Unknown".to_owned(), |v| format!("{:.2} V", v as f64 / 1000.0)),
+                },
+
+                adw::ActionRow {
+                    set_title: "Current",
+                    #[watch]
+                    set_subtitle: &model.current_ma
+                        .map_or("Unknown".to_owned(), |a| format!("{a} mA")),
                 },
 
                 adw::ActionRow {
@@ -118,6 +134,8 @@ impl SimpleComponent for BatteryPage {
             health_percent: 100.0,
             cycle_count: None,
             charge_threshold: 80,
+            voltage_mv: None,
+            current_ma: None,
         };
 
         let widgets = view_output!();
@@ -146,6 +164,8 @@ impl SimpleComponent for BatteryPage {
                 self.status = info.status;
                 self.health_percent = info.health_percent;
                 self.cycle_count = info.cycle_count;
+                self.voltage_mv = info.voltage_mv;
+                self.current_ma = info.current_ma;
                 if let Some(threshold) = info.charge_threshold {
                     self.charge_threshold = threshold;
                 }

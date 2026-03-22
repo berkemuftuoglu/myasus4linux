@@ -13,8 +13,9 @@ pub struct BatteryInfo {
     pub health_percent: f64,
     /// Number of charge cycles completed.
     pub cycle_count: Option<u32>,
-    /// Current charge limit threshold (if supported).
     pub charge_threshold: Option<u8>,
+    pub voltage_mv: Option<u32>,
+    pub current_ma: Option<i32>,
 }
 
 /// Read all available battery information from sysfs.
@@ -35,12 +36,22 @@ pub fn read_battery_info() -> Result<BatteryInfo, BackendError> {
     let charge_threshold =
         sysfs::read_value::<u8>(detect::CHARGE_CONTROL_END_THRESHOLD).ok();
 
+    // sysfs reports microvolts/microamps
+    let voltage_mv = sysfs::read_value::<u32>(detect::BAT_VOLTAGE_NOW)
+        .ok()
+        .map(|v| v / 1000);
+    let current_ma = sysfs::read_value::<i32>(detect::BAT_CURRENT_NOW)
+        .ok()
+        .map(|v| v / 1000);
+
     Ok(BatteryInfo {
         capacity,
         status,
         health_percent,
         cycle_count,
         charge_threshold,
+        voltage_mv,
+        current_ma,
     })
 }
 

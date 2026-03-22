@@ -20,8 +20,9 @@ pub const BAT_CHARGE_FULL: &str = "/sys/class/power_supply/BAT0/charge_full";
 /// Battery design capacity in microamp-hours.
 pub const BAT_CHARGE_FULL_DESIGN: &str = "/sys/class/power_supply/BAT0/charge_full_design";
 
-/// Battery charge cycle count.
 pub const BAT_CYCLE_COUNT: &str = "/sys/class/power_supply/BAT0/cycle_count";
+pub const BAT_VOLTAGE_NOW: &str = "/sys/class/power_supply/BAT0/voltage_now";
+pub const BAT_CURRENT_NOW: &str = "/sys/class/power_supply/BAT0/current_now";
 
 /// Fan / thermal policy (0=balanced, 1=performance, 2=quiet).
 pub const THROTTLE_THERMAL_POLICY: &str =
