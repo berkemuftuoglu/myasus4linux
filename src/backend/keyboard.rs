@@ -6,15 +6,13 @@ pub fn read_brightness() -> Result<u8, BackendError> {
     sysfs::read_value(detect::KBD_BACKLIGHT)
 }
 
-/// # Safeguards
-/// - Values above 3 are rejected (`InvalidBrightness`).
-/// - Uses pkexec for privilege escalation.
 pub fn set_brightness(value: u8) -> Result<(), BackendError> {
     if value > 3 {
         return Err(BackendError::InvalidBrightness(value));
     }
-
-    sysfs::write_privileged(detect::KBD_BACKLIGHT, &value.to_string())
+    // try direct write first, fall back to pkexec
+    sysfs::write(detect::KBD_BACKLIGHT, &value.to_string())
+        .or_else(|_| sysfs::write_privileged(detect::KBD_BACKLIGHT, &value.to_string()))
 }
 
 pub fn brightness_label(value: u8) -> &'static str {
