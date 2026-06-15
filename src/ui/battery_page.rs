@@ -184,10 +184,16 @@ impl SimpleComponent for BatteryPage {
                 Ok(()) => {
                     let mut s = settings::load();
                     s.charge_threshold = self.charge_threshold;
-                    let _ = settings::save(&s);
-
-                    if !settings::boot_service_installed() {
-                        let _ = settings::install_boot_service();
+                    if let Err(e) = settings::save(&s) {
+                        let _ = sender.output(BatteryOutput::Error(format!(
+                            "charge limit applied but not saved: {e}"
+                        )));
+                    } else if !settings::boot_service_installed() {
+                        if let Err(e) = settings::install_boot_service() {
+                            let _ = sender.output(BatteryOutput::Error(format!(
+                                "charge limit saved but won't persist across reboot: {e}"
+                            )));
+                        }
                     }
                 }
                 Err(e) => {
