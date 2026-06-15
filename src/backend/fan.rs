@@ -30,7 +30,7 @@ pub fn read_profile() -> Result<FanProfile, BackendError> {
 }
 
 /// Find the CPU thermal zone and return its temp in degrees C.
-/// Scans /sys/class/thermal/thermal_zone*/type for known CPU zone names.
+/// Scans `/sys/class/thermal/thermal_zone*/type` for known CPU zone names.
 pub fn read_cpu_temp() -> Option<f64> {
     let thermal = std::path::Path::new("/sys/class/thermal");
     let cpu_zone_names = ["x86_pkg_temp", "TCPU", "acpitz", "coretemp"];

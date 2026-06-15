@@ -4,7 +4,7 @@ pub const APP_ID: &str = match option_env!("APP_ID") {
     None => "io.github.berkmuftuoglu.MyAsus4Linux.Devel",
 };
 
-/// Path to the compiled GResource bundle, set at build time by Meson.
+/// Path to the compiled `GResource` bundle, set at build time by Meson.
 pub const RESOURCES_FILE: &str = match option_env!("RESOURCES_FILE") {
     Some(v) => v,
     None => "data/resources/resources.gresource",

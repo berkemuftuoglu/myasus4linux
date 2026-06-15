@@ -61,7 +61,7 @@ fn read_ram_total() -> String {
 fn read_kernel_version() -> String {
     std::fs::read_to_string("/proc/version")
         .ok()
-        .and_then(|contents| contents.split_whitespace().nth(2).map(|s| s.to_owned()))
+        .and_then(|contents| contents.split_whitespace().nth(2).map(ToOwned::to_owned))
         .unwrap_or_else(|| "Unknown".to_owned())
 }
 
