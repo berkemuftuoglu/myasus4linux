@@ -904,7 +904,6 @@ dependencies = [
 name = "myasus4linux"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "async-channel",
  "dirs-next",
  "gio",
