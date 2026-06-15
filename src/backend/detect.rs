@@ -22,9 +22,7 @@ pub const BAT_CURRENT_NOW: &str = "/sys/class/power_supply/BAT0/current_now";
 pub const THROTTLE_THERMAL_POLICY: &str =
     "/sys/devices/platform/asus-nb-wmi/throttle_thermal_policy";
 
-pub const PLATFORM_PROFILE: &str = "/sys/firmware/acpi/platform_profile";
 pub const KBD_BACKLIGHT: &str = "/sys/class/leds/asus::kbd_backlight/brightness";
-pub const KBD_BACKLIGHT_MAX: &str = "/sys/class/leds/asus::kbd_backlight/max_brightness";
 pub const DMI_PRODUCT_NAME: &str = "/sys/class/dmi/id/product_name";
 pub const DMI_BIOS_VERSION: &str = "/sys/class/dmi/id/bios_version";
 pub const DMI_BOARD_VENDOR: &str = "/sys/class/dmi/id/board_vendor";
@@ -40,7 +38,6 @@ pub struct HardwareFeatures {
     pub battery: bool,
     pub fan_profile: bool,
     pub keyboard_backlight: bool,
-    pub platform_profile: bool,
 }
 
 /// Probe sysfs paths and return a [`HardwareFeatures`] summary.
@@ -49,7 +46,6 @@ pub fn detect_features() -> HardwareFeatures {
         battery: sysfs::exists(CHARGE_CONTROL_END_THRESHOLD) && sysfs::exists(BAT_CAPACITY),
         fan_profile: sysfs::exists(THROTTLE_THERMAL_POLICY),
         keyboard_backlight: sysfs::exists(KBD_BACKLIGHT),
-        platform_profile: sysfs::exists(PLATFORM_PROFILE),
     }
 }
 

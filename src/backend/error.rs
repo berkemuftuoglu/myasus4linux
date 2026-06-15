@@ -31,7 +31,4 @@ pub enum BackendError {
 
     #[error("privileged write failed")]
     PrivilegedWrite(#[source] std::io::Error),
-
-    #[error("feature not supported on this model: {0}")]
-    NotSupported(String),
 }

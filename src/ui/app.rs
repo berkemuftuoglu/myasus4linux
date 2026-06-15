@@ -5,17 +5,17 @@ use super::battery_page::BatteryPage;
 use super::fan_page::FanPage;
 use super::info_page::InfoPage;
 use super::keyboard_page::KeyboardPage;
-use crate::backend::detect::{self, HardwareFeatures};
+use crate::backend::detect;
 
 /// Top-level application component.
 ///
-/// Holds child page controllers and the detected hardware features.
+/// The page controllers are held only to keep their components alive; dropping
+/// them would tear down the pages, so they are stored but never read directly.
 pub struct App {
-    features: HardwareFeatures,
-    battery_page: Option<Controller<BatteryPage>>,
-    fan_page: Option<Controller<FanPage>>,
-    keyboard_page: Option<Controller<KeyboardPage>>,
-    info_page: Controller<InfoPage>,
+    _battery_page: Option<Controller<BatteryPage>>,
+    _fan_page: Option<Controller<FanPage>>,
+    _keyboard_page: Option<Controller<KeyboardPage>>,
+    _info_page: Controller<InfoPage>,
 }
 
 #[derive(Debug)]
@@ -123,11 +123,10 @@ impl SimpleComponent for App {
         // If no hardware-specific pages are available, the user still sees Info.
 
         let model = App {
-            features,
-            battery_page,
-            fan_page,
-            keyboard_page,
-            info_page,
+            _battery_page: battery_page,
+            _fan_page: fan_page,
+            _keyboard_page: keyboard_page,
+            _info_page: info_page,
         };
 
         let widgets = view_output!();

@@ -22,14 +22,6 @@ impl FanProfile {
             other => Err(BackendError::UnknownFanProfile(other)),
         }
     }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Balanced => "Balanced",
-            Self::Performance => "Performance",
-            Self::Quiet => "Quiet",
-        }
-    }
 }
 
 pub fn read_profile() -> Result<FanProfile, BackendError> {
@@ -79,12 +71,5 @@ mod tests {
     fn fan_profile_rejects_invalid() {
         assert!(FanProfile::from_raw(3).is_err());
         assert!(FanProfile::from_raw(255).is_err());
-    }
-
-    #[test]
-    fn fan_profile_labels() {
-        assert_eq!(FanProfile::Balanced.label(), "Balanced");
-        assert_eq!(FanProfile::Performance.label(), "Performance");
-        assert_eq!(FanProfile::Quiet.label(), "Quiet");
     }
 }
