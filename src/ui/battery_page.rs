@@ -67,7 +67,9 @@ impl SimpleComponent for BatteryPage {
                     set_title: "Voltage",
                     #[watch]
                     set_subtitle: &model.voltage_mv
-                        .map_or("Unknown".to_owned(), |v| format!("{:.2} V", v as f64 / 1000.0)),
+                        .map_or("Unknown".to_owned(), |v| {
+                            format!("{:.2} V", f64::from(v) / 1000.0)
+                        }),
                 },
 
                 adw::ActionRow {
