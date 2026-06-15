@@ -62,8 +62,7 @@ pub fn read_battery_info() -> Result<BatteryInfo, BackendError> {
 
     let cycle_count = sysfs::read_value::<u32>(detect::BAT_CYCLE_COUNT).ok();
 
-    let charge_threshold =
-        sysfs::read_value::<u8>(detect::CHARGE_CONTROL_END_THRESHOLD).ok();
+    let charge_threshold = sysfs::read_value::<u8>(detect::CHARGE_CONTROL_END_THRESHOLD).ok();
 
     // sysfs reports microvolts/microamps
     let voltage_mv = sysfs::read_value::<u32>(detect::BAT_VOLTAGE_NOW)
@@ -88,10 +87,7 @@ pub fn set_charge_threshold(value: u8) -> Result<(), BackendError> {
     if !(THRESHOLD_MIN..=THRESHOLD_MAX).contains(&value) {
         return Err(BackendError::InvalidThreshold(value));
     }
-    sysfs::write_privileged(
-        detect::CHARGE_CONTROL_END_THRESHOLD,
-        &value.to_string(),
-    )
+    sysfs::write_privileged(detect::CHARGE_CONTROL_END_THRESHOLD, &value.to_string())
 }
 
 #[cfg(test)]

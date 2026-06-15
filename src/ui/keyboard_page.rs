@@ -68,20 +68,14 @@ impl SimpleComponent for KeyboardPage {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let model = KeyboardPage {
-            brightness: 0,
-        };
+        let model = KeyboardPage { brightness: 0 };
 
         let widgets = view_output!();
         sender.input(KeyboardInput::LoadBrightness);
         ComponentParts { model, widgets }
     }
 
-    fn update(
-        &mut self,
-        msg: Self::Input,
-        sender: ComponentSender<Self>,
-    ) {
+    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
         match msg {
             KeyboardInput::LoadBrightness => {
                 let input_sender = sender.input_sender().clone();
@@ -100,9 +94,9 @@ impl SimpleComponent for KeyboardPage {
                 self.brightness = val;
                 let input_sender = sender.input_sender().clone();
                 std::thread::spawn(move || {
-                    input_sender.send(KeyboardInput::BrightnessWritten(
-                        keyboard::set_brightness(val),
-                    ));
+                    input_sender.send(KeyboardInput::BrightnessWritten(keyboard::set_brightness(
+                        val,
+                    )));
                 });
             }
             KeyboardInput::BrightnessWritten(result) => {

@@ -23,8 +23,7 @@ impl Default for Settings {
 }
 
 fn settings_path() -> PathBuf {
-    let config = dirs_next::config_dir()
-        .unwrap_or_else(|| PathBuf::from("~/.config"));
+    let config = dirs_next::config_dir().unwrap_or_else(|| PathBuf::from("~/.config"));
     config.join("myasus4linux").join("settings.toml")
 }
 
@@ -41,8 +40,7 @@ pub fn save(settings: &Settings) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let content = toml::to_string_pretty(settings)
-        .expect("settings should always serialize");
+    let content = toml::to_string_pretty(settings).expect("settings should always serialize");
     std::fs::write(&path, content)
 }
 
@@ -68,7 +66,8 @@ pub fn install_boot_service() -> Result<(), String> {
 
     if let Some(ref mut stdin) = child.stdin {
         use std::io::Write;
-        stdin.write_all(service_content.as_bytes())
+        stdin
+            .write_all(service_content.as_bytes())
             .map_err(|e| e.to_string())?;
     }
 

@@ -1,7 +1,10 @@
 use adw::prelude::*;
 use relm4::prelude::*;
 
-use crate::backend::{error::BackendError, fan::{self, FanProfile}};
+use crate::backend::{
+    error::BackendError,
+    fan::{self, FanProfile},
+};
 
 pub struct FanPage {
     current_profile: FanProfile,
@@ -80,11 +83,7 @@ impl SimpleComponent for FanPage {
         ComponentParts { model, widgets }
     }
 
-    fn update(
-        &mut self,
-        msg: Self::Input,
-        sender: ComponentSender<Self>,
-    ) {
+    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
         match msg {
             FanInput::LoadProfile => {
                 let input_sender = sender.input_sender().clone();
@@ -106,9 +105,7 @@ impl SimpleComponent for FanPage {
                     self.current_profile = profile;
                     let input_sender = sender.input_sender().clone();
                     std::thread::spawn(move || {
-                        input_sender.send(FanInput::ProfileWritten(
-                            fan::set_profile(profile),
-                        ));
+                        input_sender.send(FanInput::ProfileWritten(fan::set_profile(profile)));
                     });
                 }
             }

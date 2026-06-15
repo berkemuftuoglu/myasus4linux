@@ -46,8 +46,7 @@ pub struct HardwareFeatures {
 /// Probe sysfs paths and return a [`HardwareFeatures`] summary.
 pub fn detect_features() -> HardwareFeatures {
     HardwareFeatures {
-        battery: sysfs::exists(CHARGE_CONTROL_END_THRESHOLD)
-            && sysfs::exists(BAT_CAPACITY),
+        battery: sysfs::exists(CHARGE_CONTROL_END_THRESHOLD) && sysfs::exists(BAT_CAPACITY),
         fan_profile: sysfs::exists(THROTTLE_THERMAL_POLICY),
         keyboard_backlight: sysfs::exists(KBD_BACKLIGHT),
         platform_profile: sysfs::exists(PLATFORM_PROFILE),

@@ -146,11 +146,7 @@ impl SimpleComponent for BatteryPage {
         ComponentParts { model, widgets }
     }
 
-    fn update(
-        &mut self,
-        msg: Self::Input,
-        sender: ComponentSender<Self>,
-    ) {
+    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
         match msg {
             BatteryInput::LoadValues => {
                 let input_sender = sender.input_sender().clone();
@@ -182,22 +178,20 @@ impl SimpleComponent for BatteryPage {
                     ));
                 });
             }
-            BatteryInput::ThresholdWritten(result) => {
-                match result {
-                    Ok(()) => {
-                        let mut s = settings::load();
-                        s.charge_threshold = self.charge_threshold;
-                        let _ = settings::save(&s);
+            BatteryInput::ThresholdWritten(result) => match result {
+                Ok(()) => {
+                    let mut s = settings::load();
+                    s.charge_threshold = self.charge_threshold;
+                    let _ = settings::save(&s);
 
-                        if !settings::boot_service_installed() {
-                            let _ = settings::install_boot_service();
-                        }
-                    }
-                    Err(e) => {
-                        let _ = sender.output(BatteryOutput::Error(e.to_string()));
+                    if !settings::boot_service_installed() {
+                        let _ = settings::install_boot_service();
                     }
                 }
-            }
+                Err(e) => {
+                    let _ = sender.output(BatteryOutput::Error(e.to_string()));
+                }
+            },
             BatteryInput::ReadError(msg) => {
                 self.status = "Error".to_owned();
                 let _ = sender.output(BatteryOutput::Error(msg));

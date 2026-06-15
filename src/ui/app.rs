@@ -1,11 +1,11 @@
 use adw::prelude::*;
 use relm4::prelude::*;
 
-use crate::backend::detect::{self, HardwareFeatures};
 use super::battery_page::BatteryPage;
 use super::fan_page::FanPage;
 use super::info_page::InfoPage;
 use super::keyboard_page::KeyboardPage;
+use crate::backend::detect::{self, HardwareFeatures};
 
 /// Top-level application component.
 ///
@@ -64,15 +64,12 @@ impl SimpleComponent for App {
 
         // Build child page controllers only for available features
         let battery_page = if features.battery {
-            Some(
-                BatteryPage::builder()
-                    .launch(())
-                    .forward(sender.input_sender(), |msg| match msg {
-                        super::battery_page::BatteryOutput::Error(e) => {
-                            AppInput::ShowToast(e)
-                        }
-                    }),
-            )
+            Some(BatteryPage::builder().launch(()).forward(
+                sender.input_sender(),
+                |msg| match msg {
+                    super::battery_page::BatteryOutput::Error(e) => AppInput::ShowToast(e),
+                },
+            ))
         } else {
             None
         };
@@ -82,9 +79,7 @@ impl SimpleComponent for App {
                 FanPage::builder()
                     .launch(())
                     .forward(sender.input_sender(), |msg| match msg {
-                        super::fan_page::FanOutput::Error(e) => {
-                            AppInput::ShowToast(e)
-                        }
+                        super::fan_page::FanOutput::Error(e) => AppInput::ShowToast(e),
                     }),
             )
         } else {
@@ -92,58 +87,37 @@ impl SimpleComponent for App {
         };
 
         let keyboard_page = if features.keyboard_backlight {
-            Some(
-                KeyboardPage::builder()
-                    .launch(())
-                    .forward(sender.input_sender(), |msg| match msg {
-                        super::keyboard_page::KeyboardOutput::Error(e) => {
-                            AppInput::ShowToast(e)
-                        }
-                    }),
-            )
+            Some(KeyboardPage::builder().launch(()).forward(
+                sender.input_sender(),
+                |msg| match msg {
+                    super::keyboard_page::KeyboardOutput::Error(e) => AppInput::ShowToast(e),
+                },
+            ))
         } else {
             None
         };
 
-        let info_page = InfoPage::builder()
-            .launch(())
-            .detach();
+        let info_page = InfoPage::builder().launch(()).detach();
 
         // Build the ViewStack and add pages
         let stack = adw::ViewStack::new();
 
         if let Some(ref controller) = battery_page {
-            let page = stack.add_titled(
-                controller.widget(),
-                Some("battery"),
-                "Battery",
-            );
+            let page = stack.add_titled(controller.widget(), Some("battery"), "Battery");
             page.set_icon_name(Some("battery-symbolic"));
         }
 
         if let Some(ref controller) = fan_page {
-            let page = stack.add_titled(
-                controller.widget(),
-                Some("fan"),
-                "Fan",
-            );
+            let page = stack.add_titled(controller.widget(), Some("fan"), "Fan");
             page.set_icon_name(Some("preferences-system-power-symbolic"));
         }
 
         if let Some(ref controller) = keyboard_page {
-            let page = stack.add_titled(
-                controller.widget(),
-                Some("keyboard"),
-                "Keyboard",
-            );
+            let page = stack.add_titled(controller.widget(), Some("keyboard"), "Keyboard");
             page.set_icon_name(Some("input-keyboard-symbolic"));
         }
 
-        let info_stack_page = stack.add_titled(
-            info_page.widget(),
-            Some("info"),
-            "Info",
-        );
+        let info_stack_page = stack.add_titled(info_page.widget(), Some("info"), "Info");
         info_stack_page.set_icon_name(Some("dialog-information-symbolic"));
 
         // If no hardware-specific pages are available, the user still sees Info.

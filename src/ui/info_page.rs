@@ -41,15 +41,18 @@ fn read_ram_total() -> String {
     std::fs::read_to_string("/proc/meminfo")
         .ok()
         .and_then(|contents| {
-            contents.lines().find(|l| l.starts_with("MemTotal:")).map(|l| {
-                let kb: u64 = l
-                    .split_whitespace()
-                    .nth(1)
-                    .and_then(|v| v.parse().ok())
-                    .unwrap_or(0);
-                let gb = kb as f64 / 1_048_576.0;
-                format!("{gb:.1} GB")
-            })
+            contents
+                .lines()
+                .find(|l| l.starts_with("MemTotal:"))
+                .map(|l| {
+                    let kb: u64 = l
+                        .split_whitespace()
+                        .nth(1)
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(0);
+                    let gb = kb as f64 / 1_048_576.0;
+                    format!("{gb:.1} GB")
+                })
         })
         .unwrap_or_else(|| "Unknown".to_owned())
 }
@@ -58,12 +61,7 @@ fn read_ram_total() -> String {
 fn read_kernel_version() -> String {
     std::fs::read_to_string("/proc/version")
         .ok()
-        .and_then(|contents| {
-            contents
-                .split_whitespace()
-                .nth(2)
-                .map(|s| s.to_owned())
-        })
+        .and_then(|contents| contents.split_whitespace().nth(2).map(|s| s.to_owned()))
         .unwrap_or_else(|| "Unknown".to_owned())
 }
 
@@ -78,12 +76,7 @@ fn read_storage_info() -> String {
                     let fields: Vec<&str> = l.split_whitespace().collect();
                     fields.get(1) == Some(&"/")
                 })
-                .map(|l| {
-                    l.split_whitespace()
-                        .next()
-                        .unwrap_or("Unknown")
-                        .to_owned()
-                })
+                .map(|l| l.split_whitespace().next().unwrap_or("Unknown").to_owned())
         })
         .unwrap_or_else(|| "Unknown".to_owned())
 }
@@ -171,27 +164,17 @@ impl SimpleComponent for InfoPage {
         ComponentParts { model, widgets }
     }
 
-    fn update(
-        &mut self,
-        msg: Self::Input,
-        _sender: ComponentSender<Self>,
-    ) {
+    fn update(&mut self, msg: Self::Input, _sender: ComponentSender<Self>) {
         match msg {
             InfoInput::Load => {
-                self.model_name = sysfs::read(
-                    crate::backend::detect::DMI_PRODUCT_NAME,
-                )
-                .unwrap_or_else(|_| "Unknown".to_owned());
+                self.model_name = sysfs::read(crate::backend::detect::DMI_PRODUCT_NAME)
+                    .unwrap_or_else(|_| "Unknown".to_owned());
 
-                self.bios_version = sysfs::read(
-                    crate::backend::detect::DMI_BIOS_VERSION,
-                )
-                .unwrap_or_else(|_| "Unknown".to_owned());
+                self.bios_version = sysfs::read(crate::backend::detect::DMI_BIOS_VERSION)
+                    .unwrap_or_else(|_| "Unknown".to_owned());
 
-                self.vendor = sysfs::read(
-                    crate::backend::detect::DMI_BOARD_VENDOR,
-                )
-                .unwrap_or_else(|_| "Unknown".to_owned());
+                self.vendor = sysfs::read(crate::backend::detect::DMI_BOARD_VENDOR)
+                    .unwrap_or_else(|_| "Unknown".to_owned());
 
                 self.cpu_model = read_cpu_model();
                 self.ram_total = read_ram_total();
