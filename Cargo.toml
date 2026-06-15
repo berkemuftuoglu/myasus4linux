@@ -26,6 +26,9 @@ dirs-next = "2"
 [build-dependencies]
 glib-build-tools = "0.21"
 
+[dev-dependencies]
+tempfile = "3"
+
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }
 module_name_repetitions = "allow"
