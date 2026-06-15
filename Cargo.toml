@@ -47,7 +47,12 @@ print_stderr = "warn"
 print_stdout = "warn"
 todo = "warn"
 unimplemented = "warn"
+# panic-class guardrails for production paths (allowed in tests, see main.rs)
 unwrap_used = "warn"
+expect_used = "warn"
+unwrap_in_result = "warn"
+panic = "warn"
+indexing_slicing = "warn"
 
 [lints.rust]
 unsafe_code = "deny"
