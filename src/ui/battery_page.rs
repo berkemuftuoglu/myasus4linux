@@ -155,7 +155,7 @@ impl SimpleComponent for BatteryPage {
                         Ok(info) => BatteryInput::ValuesLoaded(Box::new(info)),
                         Err(e) => BatteryInput::ReadError(e.to_string()),
                     };
-                    input_sender.send(msg);
+                    let _ = input_sender.send(msg);
                 });
             }
             BatteryInput::ValuesLoaded(info) => {
@@ -173,7 +173,7 @@ impl SimpleComponent for BatteryPage {
                 self.charge_threshold = val;
                 let input_sender = sender.input_sender().clone();
                 std::thread::spawn(move || {
-                    input_sender.send(BatteryInput::ThresholdWritten(
+                    let _ = input_sender.send(BatteryInput::ThresholdWritten(
                         battery::set_charge_threshold(val),
                     ));
                 });

@@ -84,7 +84,7 @@ impl SimpleComponent for KeyboardPage {
                         Ok(val) => KeyboardInput::BrightnessLoaded(val),
                         Err(e) => KeyboardInput::ReadError(e.to_string()),
                     };
-                    input_sender.send(msg);
+                    let _ = input_sender.send(msg);
                 });
             }
             KeyboardInput::BrightnessLoaded(val) => {
@@ -94,9 +94,9 @@ impl SimpleComponent for KeyboardPage {
                 self.brightness = val;
                 let input_sender = sender.input_sender().clone();
                 std::thread::spawn(move || {
-                    input_sender.send(KeyboardInput::BrightnessWritten(keyboard::set_brightness(
-                        val,
-                    )));
+                    let _ = input_sender.send(KeyboardInput::BrightnessWritten(
+                        keyboard::set_brightness(val),
+                    ));
                 });
             }
             KeyboardInput::BrightnessWritten(result) => {

@@ -92,7 +92,7 @@ impl SimpleComponent for FanPage {
                         Ok(profile) => FanInput::ProfileLoaded(profile, fan::read_cpu_temp()),
                         Err(e) => FanInput::ReadError(e.to_string()),
                     };
-                    input_sender.send(msg);
+                    let _ = input_sender.send(msg);
                 });
             }
             FanInput::ProfileLoaded(profile, temp) => {
@@ -105,7 +105,8 @@ impl SimpleComponent for FanPage {
                     self.current_profile = profile;
                     let input_sender = sender.input_sender().clone();
                     std::thread::spawn(move || {
-                        input_sender.send(FanInput::ProfileWritten(fan::set_profile(profile)));
+                        let _ =
+                            input_sender.send(FanInput::ProfileWritten(fan::set_profile(profile)));
                     });
                 }
             }
