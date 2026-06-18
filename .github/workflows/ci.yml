@@ -5,37 +5,34 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
 jobs:
-  check:
+  fmt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --check
+
+  clippy-test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-
-      - name: install system deps
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: |
-          # GitHub's Ubuntu runners default to azure.archive.ubuntu.com, which
-          # intermittently stalls apt for the whole job. Force retries and short
-          # timeouts so a bad mirror fails fast, and prefer the canonical mirror.
-          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' \
-            | sudo tee /etc/apt/apt.conf.d/99hardening >/dev/null
-          sudo sed -i 's|azure.archive.ubuntu.com|archive.ubuntu.com|g' /etc/apt/apt-mirrors.txt || true
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev
-
+      - uses: ./.github/actions/gtk-deps
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
-
+          components: clippy
       - uses: Swatinem/rust-cache@v2
-
-      - name: fmt
-        run: cargo fmt --check
-
-      - name: clippy
-        run: cargo clippy -- -D warnings
-
-      - name: test
-        run: cargo test
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo test --locked
