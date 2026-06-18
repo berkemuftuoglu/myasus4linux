@@ -1,0 +1,18 @@
+name: gtk-deps
+description: Install GTK4 and libadwaita with a hardened apt step
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        # GitHub's Ubuntu runners default to azure.archive.ubuntu.com, which
+        # intermittently stalls apt for the whole job. Force retries and short
+        # timeouts so a bad mirror fails fast, and prefer the canonical mirror.
+        printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' \
+          | sudo tee /etc/apt/apt.conf.d/99hardening >/dev/null
+        sudo sed -i 's|azure.archive.ubuntu.com|archive.ubuntu.com|g' /etc/apt/apt-mirrors.txt || true
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev
