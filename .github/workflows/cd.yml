@@ -9,15 +9,24 @@ on:
 jobs:
   package:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     env:
       APP_ID: io.github.berkmuftuoglu.MyAsus4Linux
     steps:
       - uses: actions/checkout@v4
 
       - name: install system deps
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
+          # GitHub's Ubuntu runners default to azure.archive.ubuntu.com, which
+          # intermittently stalls apt for the whole job. Force retries and short
+          # timeouts so a bad mirror fails fast, and prefer the canonical mirror.
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' \
+            | sudo tee /etc/apt/apt.conf.d/99hardening >/dev/null
+          sudo sed -i 's|azure.archive.ubuntu.com|archive.ubuntu.com|g' /etc/apt/apt-mirrors.txt || true
           sudo apt-get update
-          sudo apt-get install -y libgtk-4-dev libadwaita-1-dev
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev
 
       - uses: dtolnay/rust-toolchain@stable
 
