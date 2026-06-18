@@ -13,6 +13,8 @@ jobs:
   package:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    permissions:
+      contents: write
     env:
       APP_ID: io.github.berkmuftuoglu.MyAsus4Linux
     steps:
