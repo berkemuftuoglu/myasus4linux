@@ -14,12 +14,24 @@ if host_machine.system() == 'linux'
         'io.github.berkmuftuoglu.MyAsus4Linux.Helper.conf',
         install_dir: datadir / 'dbus-1' / 'system.d',
     )
-    install_data(
-        'io.github.berkmuftuoglu.MyAsus4Linux.Helper.service',
+    # ExecStart/Exec must point at wherever the daemon binary lands (libexecdir),
+    # which varies with the build prefix. Render it from a template so a distro
+    # build with --prefix=/usr does not ship a unit pointing at /usr/local. The
+    # manual installer (install-daemon.sh) renders the same .in templates.
+    svc_conf = configuration_data()
+    svc_conf.set('libexecdir', libexecdir)
+    configure_file(
+        input: 'io.github.berkmuftuoglu.MyAsus4Linux.Helper.service.in',
+        output: 'io.github.berkmuftuoglu.MyAsus4Linux.Helper.service',
+        configuration: svc_conf,
+        install: true,
         install_dir: datadir / 'dbus-1' / 'system-services',
     )
-    install_data(
-        'myasusd.service',
+    configure_file(
+        input: 'myasusd.service.in',
+        output: 'myasusd.service',
+        configuration: svc_conf,
+        install: true,
         install_dir: get_option('prefix') / 'lib' / 'systemd' / 'system',
     )
     install_data(

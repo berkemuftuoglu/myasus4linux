@@ -5,7 +5,7 @@ Documentation=https://github.com/berkmuftuoglu/myasus4linux
 [Service]
 Type=dbus
 BusName=io.github.berkmuftuoglu.MyAsus4Linux.Helper
-ExecStart=/usr/local/libexec/myasusd
+ExecStart=@libexecdir@/myasusd
 # Root-owned /var/lib/myasus4linux for the persisted charge limit; systemd
 # creates it and adds it to the writable paths automatically.
 StateDirectory=myasus4linux
