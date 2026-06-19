@@ -1,11 +1,18 @@
 [Unit]
 Description=myasus4linux privileged hardware control daemon
 Documentation=https://github.com/berkmuftuoglu/myasus4linux
+After=systemd-udevd.service
+# Cap restarts so a persistent failure surfaces instead of crash-looping.
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=dbus
 BusName=io.github.berkmuftuoglu.MyAsus4Linux.Helper
 ExecStart=@libexecdir@/myasusd
+# Survive a transient crash so the saved charge limit still gets restored.
+Restart=on-failure
+RestartSec=1
 # Root-owned /var/lib/myasus4linux for the persisted charge limit; systemd
 # creates it and adds it to the writable paths automatically.
 StateDirectory=myasus4linux
@@ -24,6 +31,16 @@ RestrictRealtime=yes
 RestrictSUIDSGID=yes
 # It only ever talks D-Bus over a unix socket; it needs no network.
 RestrictAddressFamilies=AF_UNIX
+# Drop all capabilities: as root the daemon owns the sysfs files it writes, so it
+# needs none. Re-verify writes still succeed if this is ever tightened further.
+CapabilityBoundingSet=
+AmbientCapabilities=
+MemoryDenyWriteExecute=yes
+# Allowlist the service syscall set; the daemon does file I/O + D-Bus + signals.
+# (Verify on a real boot if you tighten this further -- a bad filter SIGSYSes.)
+SystemCallFilter=@system-service
+IPAddressDeny=any
+RemoveIPC=yes
 LockPersonality=yes
 SystemCallArchitectures=native
 PrivateTmp=yes
