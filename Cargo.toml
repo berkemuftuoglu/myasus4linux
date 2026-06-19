@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
+publish.workspace = true
 description = "Open source replacement for ASUS MyASUS on Linux"
 
 [lints]
@@ -20,6 +21,9 @@ edition = "2024"
 rust-version = "1.85"
 license = "GPL-3.0-or-later"
 authors = ["Berk Muftuoglu"]
+# Distributed as Flatpak/distro packages, never to crates.io; this also lets
+# cargo-deny accept the internal path dependencies.
+publish = false
 
 # Versions shared by more than one crate live here so a bump happens in one place.
 [workspace.dependencies]
