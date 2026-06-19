@@ -159,6 +159,22 @@ pub fn kbd_backlight_path(root: &Path) -> Option<PathBuf> {
         .map(|p| p.join("brightness"))
 }
 
+/// Resolve the AC adapter's `online` attribute under `root`, if a mains supply
+/// is present. The adapter's name varies (AC/ADP/ACAD), so it is matched by
+/// `type == Mains`, not by name.
+pub fn ac_online_path(root: &Path) -> Option<PathBuf> {
+    std::fs::read_dir(root)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| is_mains(p))
+        .map(|p| p.join("online"))
+}
+
+fn is_mains(dir: &Path) -> bool {
+    std::fs::read_to_string(dir.join("type")).is_ok_and(|t| t.trim().eq_ignore_ascii_case("Mains"))
+}
+
 /// The `platform_profile` token for a canonical fan-profile value (0=balanced,
 /// 1=performance, 2=quiet), or `None` if out of range.
 pub fn platform_profile_token(value: u8) -> Option<&'static str> {
@@ -295,6 +311,17 @@ mod tests {
             charge_threshold_path(root),
             Some(root.join("BATC").join(CHARGE_THRESHOLD_ATTR))
         );
+    }
+
+    #[test]
+    fn ac_online_path_matches_mains_by_type() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        mk_battery(root, "BAT0", Some(50_000_000), Some(80));
+        let ac = root.join("ADP1");
+        std::fs::create_dir_all(&ac).unwrap();
+        std::fs::write(ac.join("type"), "Mains\n").unwrap();
+        assert_eq!(ac_online_path(root), Some(ac.join("online")));
     }
 
     #[test]

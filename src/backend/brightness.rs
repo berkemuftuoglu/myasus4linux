@@ -5,17 +5,24 @@ use std::path::PathBuf;
 use super::error::BackendError;
 use super::sysfs;
 
+/// Most laptops expose one panel backlight, but some show several (e.g. an AMD
+/// `amdgpu_bl*` plus a firmware `acpi_video0`). Pick the most specific real
+/// controller in preference order; only then fall back to the first by name so
+/// the choice is deterministic across boots rather than `read_dir` order.
 fn backlight_dir() -> Option<PathBuf> {
+    const PREFERRED: [&str; 4] = ["intel_backlight", "amdgpu_bl1", "amdgpu_bl0", "acpi_video0"];
     let root = std::path::Path::new("/sys/class/backlight");
-    let mut fallback = None;
-    for entry in std::fs::read_dir(root).ok()?.flatten() {
-        let path = entry.path();
-        if path.file_name().and_then(|n| n.to_str()) == Some("intel_backlight") {
-            return Some(path);
+    let mut devices: Vec<PathBuf> = std::fs::read_dir(root).ok()?.flatten().map(|e| e.path()).collect();
+    devices.sort();
+    for name in PREFERRED {
+        if let Some(p) = devices
+            .iter()
+            .find(|p| p.file_name().and_then(|n| n.to_str()) == Some(name))
+        {
+            return Some(p.clone());
         }
-        fallback.get_or_insert(path);
     }
-    fallback
+    devices.into_iter().next()
 }
 
 pub fn available() -> bool {

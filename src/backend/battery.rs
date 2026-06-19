@@ -101,6 +101,9 @@ pub struct BatteryInfo {
     pub power_w: Option<f64>,
     /// Hours until full (charging) or empty (discharging), at the current rate.
     pub time_remaining_h: Option<f64>,
+    /// Whether the AC adapter is plugged in, from the mains supply's `online`
+    /// attribute. `None` when no mains device is exposed.
+    pub on_ac: Option<bool>,
 }
 
 impl BatteryInfo {
@@ -140,6 +143,10 @@ pub fn read_battery_info() -> Result<BatteryInfo, BackendError> {
         _ => None,
     };
 
+    let on_ac = myasus_core::ac_online_path(Path::new(myasus_core::POWER_SUPPLY_ROOT))
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .map(|s| s.trim() == "1");
+
     Ok(BatteryInfo {
         capacity,
         status,
@@ -150,6 +157,7 @@ pub fn read_battery_info() -> Result<BatteryInfo, BackendError> {
         current_ma: current_ua.map(|i| i32::try_from(i / 1000).unwrap_or(i32::MAX)),
         power_w,
         time_remaining_h,
+        on_ac,
     })
 }
 

@@ -410,15 +410,18 @@ impl Overview {
         );
 
         // Safeguard: nudge toward quiet mode when low and unplugged, once per
-        // low-battery episode so it doesn't nag every tick.
-        if safeguards::suggest_quiet(cap, charging, self.current_profile) {
+        // low-battery episode so it doesn't nag every tick. Prefer the actual AC
+        // state over "charging" -- a full battery on AC isn't charging but also
+        // isn't running down, so it shouldn't trigger the nudge.
+        let plugged = b.on_ac.unwrap_or(charging);
+        if safeguards::suggest_quiet(cap, plugged, self.current_profile) {
             if !self.low_batt_warned {
                 self.low_batt_warned = true;
                 let _ = sender.output(OverviewOutput::Error(
                     "Battery low, switch to Quiet mode to save power".to_owned(),
                 ));
             }
-        } else if charging || cap > safeguards::LOW_BATTERY_PCT {
+        } else if plugged || cap > safeguards::LOW_BATTERY_PCT {
             self.low_batt_warned = false;
         }
     }

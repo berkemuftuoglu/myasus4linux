@@ -23,6 +23,7 @@ pub struct BatteryPage {
     curr_s: Stat,
     time_s: Stat,
     cycle_s: Stat,
+    src_s: Stat,
 }
 
 #[derive(Debug)]
@@ -102,6 +103,13 @@ impl BatteryPage {
                 .map_or_else(|| "—".to_owned(), |c| c.to_string()),
             "charge cycles",
         );
+
+        let (src, src_sub) = match info.on_ac {
+            Some(true) => ("AC", "plugged in"),
+            Some(false) => ("Battery", "on battery"),
+            None => ("—", "power source"),
+        };
+        self.src_s.set(src, src_sub);
 
         // Don't let a 2s poll stomp the value while the user is dragging the
         // slider or a debounced write is still in flight.
@@ -244,6 +252,7 @@ impl SimpleComponent for BatteryPage {
             curr_s: Stat::with_spark("Current", Rgb::new(1.0, 0.6, 0.2)),
             time_s: Stat::new("Time Remaining"),
             cycle_s: Stat::new("Cycle Count"),
+            src_s: Stat::new("Power Source"),
         };
 
         let widgets = view_output!();
@@ -259,7 +268,13 @@ impl SimpleComponent for BatteryPage {
         model.power_s.root.set_size_request(200, -1);
         widgets.heroes.insert(&model.power_s.root, -1);
 
-        for s in [&model.volt_s, &model.curr_s, &model.time_s, &model.cycle_s] {
+        for s in [
+            &model.volt_s,
+            &model.curr_s,
+            &model.time_s,
+            &model.cycle_s,
+            &model.src_s,
+        ] {
             s.root.set_size_request(168, -1);
             widgets.stats.insert(&s.root, -1);
         }
