@@ -125,11 +125,7 @@ pub fn set_charge_threshold(value: u8) -> Result<(), BackendError> {
     if !(THRESHOLD_MIN..=THRESHOLD_MAX).contains(&value) {
         return Err(BackendError::InvalidThreshold(value));
     }
-    // Try a direct write first (a udev rule may make the control user-writable);
-    // fall back to pkexec only when it is still root-owned.
-    let threshold = value.to_string();
-    sysfs::write(detect::CHARGE_CONTROL_END_THRESHOLD, &threshold)
-        .or_else(|_| sysfs::write_privileged(detect::CHARGE_CONTROL_END_THRESHOLD, &threshold))
+    super::daemon::set_charge_threshold(value)
 }
 
 #[cfg(test)]

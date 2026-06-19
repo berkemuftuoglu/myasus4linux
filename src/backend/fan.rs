@@ -49,11 +49,7 @@ pub fn read_cpu_temp() -> Option<f64> {
 }
 
 pub fn set_profile(profile: FanProfile) -> Result<(), BackendError> {
-    // Try a direct write first (a udev rule may make the control user-writable);
-    // fall back to pkexec only when it is still root-owned.
-    let value = (profile as u8).to_string();
-    sysfs::write(detect::THROTTLE_THERMAL_POLICY, &value)
-        .or_else(|_| sysfs::write_privileged(detect::THROTTLE_THERMAL_POLICY, &value))
+    super::daemon::set_fan_profile(profile as u8)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

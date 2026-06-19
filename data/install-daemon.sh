@@ -24,7 +24,7 @@ uninstall() {
     echo "uninstalled myasusd"
 }
 
-install() {
+do_install() {
     install -Dm755 "$root/target/release/myasusd" "$BIN"
     install -Dm644 "$here/io.github.berkmuftuoglu.MyAsus4Linux.Helper.conf" "$DBUS_CONF"
     install -Dm644 "$here/io.github.berkmuftuoglu.MyAsus4Linux.Helper.service" "$DBUS_SVC"
@@ -36,6 +36,6 @@ install() {
 
 case "${1:-install}" in
     uninstall) uninstall ;;
-    install) install ;;
+    install) do_install ;;
     *) echo "usage: $0 [install|uninstall]" >&2; exit 1 ;;
 esac

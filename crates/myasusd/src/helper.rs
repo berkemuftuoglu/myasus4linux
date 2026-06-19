@@ -54,7 +54,13 @@ impl Helper {
         #[zbus(header)] header: Header<'_>,
         #[zbus(connection)] connection: &zbus::Connection,
     ) -> zbus::fdo::Result<()> {
-        Ok(apply(connection, &header, ACTION_CHARGE, Op::ChargeThreshold(value)).await?)
+        Ok(apply(
+            connection,
+            &header,
+            ACTION_CHARGE,
+            Op::ChargeThreshold(value),
+        )
+        .await?)
     }
 
     async fn set_fan_profile(
@@ -72,7 +78,13 @@ impl Helper {
         #[zbus(header)] header: Header<'_>,
         #[zbus(connection)] connection: &zbus::Connection,
     ) -> zbus::fdo::Result<()> {
-        Ok(apply(connection, &header, ACTION_KBD, Op::KeyboardBacklight(value)).await?)
+        Ok(apply(
+            connection,
+            &header,
+            ACTION_KBD,
+            Op::KeyboardBacklight(value),
+        )
+        .await?)
     }
 }
 
@@ -86,10 +98,8 @@ async fn apply(
     authorize(connection, header, action_id).await?;
     op.validate()?;
     let path = op.path();
-    std::fs::write(path, op.raw_value().to_string()).map_err(|source| HelperError::Write {
-        path,
-        source,
-    })?;
+    std::fs::write(path, op.raw_value().to_string())
+        .map_err(|source| HelperError::Write { path, source })?;
     tracing::info!("wrote {} to {path}", op.raw_value());
     Ok(())
 }

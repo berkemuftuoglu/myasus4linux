@@ -20,6 +20,7 @@ relm4 = { version = "0.10", features = ["libadwaita"] }
 glib = "0.21"
 gio = "0.21"
 thiserror = "2"
+zbus = "5"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 serde = { version = "1", features = ["derive"] }

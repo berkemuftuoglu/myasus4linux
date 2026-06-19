@@ -1,6 +1,7 @@
 pub mod battery;
 pub mod brightness;
 pub mod cpu;
+pub mod daemon;
 pub mod detect;
 pub mod error;
 pub mod fan;

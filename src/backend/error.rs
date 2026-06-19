@@ -29,9 +29,6 @@ pub enum BackendError {
     #[error("unknown fan profile value {0}")]
     UnknownFanProfile(u8),
 
-    #[error("privileged write failed")]
-    PrivilegedWrite(#[source] std::io::Error),
-
-    #[error("refused to write to non-whitelisted path: {0}")]
-    DisallowedPath(String),
+    #[error("privileged daemon call failed: {0}")]
+    Daemon(#[source] zbus::Error),
 }
