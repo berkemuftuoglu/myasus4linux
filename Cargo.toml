@@ -52,6 +52,10 @@ glib-build-tools = "0.21"
 [dev-dependencies]
 tempfile.workspace = true
 
+[profile.release]
+# Smaller daemon + GUI binaries for distro packages.
+strip = true
+
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
 module_name_repetitions = "allow"

@@ -23,8 +23,11 @@ pub const THROTTLE_THERMAL_POLICY: &str = myasus_core::FAN_PROFILE_PATH;
 
 pub const KBD_BACKLIGHT: &str = myasus_core::KBD_BACKLIGHT_PATH;
 pub const DMI_PRODUCT_NAME: &str = "/sys/class/dmi/id/product_name";
+pub const DMI_PRODUCT_FAMILY: &str = "/sys/class/dmi/id/product_family";
 pub const DMI_BIOS_VERSION: &str = "/sys/class/dmi/id/bios_version";
 pub const DMI_BOARD_VENDOR: &str = "/sys/class/dmi/id/board_vendor";
+/// Per-model identifier; the natural key for any future model-specific quirks.
+pub const DMI_BOARD_NAME: &str = "/sys/class/dmi/id/board_name";
 
 /// On startup the application probes sysfs to determine which controls are
 /// available. Pages for unsupported features are hidden in the UI.

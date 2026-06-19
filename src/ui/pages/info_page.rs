@@ -75,7 +75,9 @@ impl SimpleComponent for InfoPage {
             "Hardware Configuration",
             &[
                 ("Model", dmi(detect::DMI_PRODUCT_NAME)),
+                ("Product Family", dmi(detect::DMI_PRODUCT_FAMILY)),
                 ("Vendor", dmi(detect::DMI_BOARD_VENDOR)),
+                ("Board", dmi(detect::DMI_BOARD_NAME)),
                 ("BIOS Version", dmi(detect::DMI_BIOS_VERSION)),
                 ("Processor", read_cpu_model()),
                 ("Memory", read_ram_total()),
