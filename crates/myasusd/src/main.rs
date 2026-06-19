@@ -1,3 +1,13 @@
+#![cfg_attr(
+    test,
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing
+    )
+)]
+
 //! `myasusd` -- the privileged D-Bus system daemon for myasus4linux.
 //!
 //! Runs as root, owns the well-known name on the system bus, and is the only
@@ -26,17 +36,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // before anything else; then serve requests for the rest of the session.
     helper::restore_charge_threshold();
 
-    let connection = zbus::connection::Builder::system()?
+    // Held (not `_`) so the connection lives until shutdown; dropping it would
+    // release the bus name.
+    let _connection = zbus::connection::Builder::system()?
         .name(BUS_NAME)?
-        .serve_at(OBJECT_PATH, Helper::new())?
+        .serve_at(OBJECT_PATH, Helper)?
         .build()
         .await?;
 
     tracing::info!("myasusd up, owning {BUS_NAME} at {OBJECT_PATH}");
 
-    // The connection handles messages in the background; keep the process alive.
-    // `connection` is held so it is not dropped.
-    let _ = &connection;
-    std::future::pending::<()>().await;
+    wait_for_shutdown().await;
+    tracing::info!("shutting down");
     Ok(())
+}
+
+/// Block until the service manager stops us (SIGTERM) or we are interrupted
+/// (Ctrl-C), so `systemctl stop` exits cleanly instead of being killed.
+async fn wait_for_shutdown() {
+    use tokio::signal::unix::{SignalKind, signal};
+
+    let mut term = match signal(SignalKind::terminate()) {
+        Ok(stream) => stream,
+        Err(e) => {
+            tracing::warn!("cannot watch for SIGTERM ({e}); running until killed");
+            std::future::pending::<()>().await;
+            return;
+        }
+    };
+    tokio::select! {
+        _ = term.recv() => {}
+        result = tokio::signal::ctrl_c() => {
+            if let Err(e) = result {
+                tracing::warn!("ctrl_c watch failed: {e}");
+            }
+        }
+    }
 }

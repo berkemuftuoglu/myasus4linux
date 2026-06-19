@@ -17,6 +17,7 @@ pub struct InfoPage {
 #[derive(Debug)]
 pub enum InfoInput {
     Tick,
+    Loaded(Option<(f64, f64)>, String),
 }
 
 #[relm4::component(pub)]
@@ -86,7 +87,7 @@ impl SimpleComponent for InfoPage {
 
         sender.input(InfoInput::Tick);
         let ticker = sender.clone();
-        glib::timeout_add_seconds_local(2, move || {
+        glib::timeout_add_seconds_local(crate::ui::POLL_SECS, move || {
             ticker.input(InfoInput::Tick);
             glib::ControlFlow::Continue
         });
@@ -94,14 +95,19 @@ impl SimpleComponent for InfoPage {
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, msg: Self::Input, _sender: ComponentSender<Self>) {
+    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
         match msg {
             InfoInput::Tick => {
-                if let Some((used, total)) = read_mem_usage() {
+                crate::ui::offload(sender.input_sender(), || {
+                    InfoInput::Loaded(read_mem_usage(), read_uptime())
+                });
+            }
+            InfoInput::Loaded(mem, uptime) => {
+                if let Some((used, total)) = mem {
                     let frac = if total > 0.0 { used / total } else { 0.0 };
                     self.mem_meter.set(frac, &format!("{used:.1}/{total:.0}G"));
                 }
-                self.uptime_s.set(&read_uptime(), "since boot");
+                self.uptime_s.set(&uptime, "since boot");
             }
         }
     }

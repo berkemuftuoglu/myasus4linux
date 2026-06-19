@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 
 use myasus_core::Op;
 use zbus::message::Header;
@@ -44,12 +45,6 @@ impl From<HelperError> for zbus::fdo::Error {
 }
 
 pub struct Helper;
-
-impl Helper {
-    pub fn new() -> Self {
-        Self
-    }
-}
 
 #[zbus::interface(name = "io.github.berkmuftuoglu.MyAsus4Linux.Helper")]
 impl Helper {
@@ -103,42 +98,77 @@ async fn apply(
     authorize(connection, header, action_id).await?;
     op.validate()?;
     let path = op.path();
-    std::fs::write(path, op.raw_value().to_string())
-        .map_err(|source| HelperError::Write { path, source })?;
-    tracing::info!("wrote {} to {path}", op.raw_value());
-    if let Op::ChargeThreshold(value) = op {
-        persist_charge_threshold(value);
+    // Defence in depth: the path is a fixed constant per Op and never caller-
+    // supplied, but a privileged writer must still refuse anything that is not an
+    // absolute /sys attribute, so a future Op variant can't become an arbitrary
+    // write. Empty or relative paths fail this check.
+    if !std::path::Path::new(path).is_absolute() {
+        return Err(HelperError::Write {
+            path,
+            source: std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "refusing to write a non-absolute path",
+            ),
+        });
     }
+    let value = op.raw_value();
+    let persist = matches!(op, Op::ChargeThreshold(_));
+    // Run the sysfs (and state-file) writes on a blocking thread so they never
+    // stall the async D-Bus executor. The outer map_err handles a panicked
+    // worker; the inner one handles the write itself failing.
+    tokio::task::spawn_blocking(move || -> std::io::Result<()> {
+        std::fs::write(path, value.to_string())?;
+        if persist {
+            persist_charge_threshold(value);
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|join| HelperError::Write {
+        path,
+        source: std::io::Error::other(join),
+    })?
+    .map_err(|source| HelperError::Write { path, source })?;
+    tracing::info!("wrote {value} to {path}");
     Ok(())
 }
 
 /// Record the charge limit for [`restore_charge_threshold`]. Best-effort: a
 /// failure to persist must never fail the write the user just authorised.
 fn persist_charge_threshold(value: u8) {
-    let dir = std::path::Path::new(CHARGE_STATE_FILE).parent();
-    let written = dir
-        .map_or(Ok(()), std::fs::create_dir_all)
-        .and_then(|()| std::fs::write(CHARGE_STATE_FILE, value.to_string()));
-    if let Err(e) = written {
+    if let Err(e) = write_state(Path::new(CHARGE_STATE_FILE), value) {
         tracing::warn!("could not persist charge threshold: {e}");
     }
+}
+
+/// Write the charge value to `path`, creating its parent directory. Path is
+/// injectable so the round-trip can be exercised without touching `/var/lib`.
+fn write_state(path: &Path, value: u8) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, value.to_string())
+}
+
+/// Parse and range-check persisted state. None for malformed or out-of-range
+/// contents. Pure, so it is unit-tested directly.
+fn parse_persisted(raw: &str) -> Option<u8> {
+    let value = raw.trim().parse::<u8>().ok()?;
+    Op::ChargeThreshold(value).validate().ok()?;
+    Some(value)
 }
 
 /// Re-apply the persisted charge limit at daemon startup, so it is restored on
 /// boot before any GUI runs. Silent when nothing has ever been saved.
 pub fn restore_charge_threshold() {
     let Ok(raw) = std::fs::read_to_string(CHARGE_STATE_FILE) else {
-        return;
+        return; // nothing saved yet
     };
-    let Ok(value) = raw.trim().parse::<u8>() else {
-        tracing::warn!("ignoring malformed persisted charge threshold {raw:?}");
+    let Some(value) = parse_persisted(&raw) else {
+        tracing::warn!("ignoring malformed or out-of-range persisted charge threshold {raw:?}");
         return;
     };
     let op = Op::ChargeThreshold(value);
-    if let Err(e) = op.validate() {
-        tracing::warn!("ignoring out-of-range persisted charge threshold: {e}");
-        return;
-    }
     match std::fs::write(op.path(), op.raw_value().to_string()) {
         Ok(()) => tracing::info!("restored charge threshold {value} on startup"),
         Err(e) => tracing::warn!("could not restore charge threshold: {e}"),
@@ -167,5 +197,33 @@ async fn authorize(
         Ok(())
     } else {
         Err(HelperError::NotAuthorized)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn persisted_state_round_trips_through_a_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state/charge_threshold");
+        write_state(&path, 70).unwrap();
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(parse_persisted(&raw), Some(70));
+    }
+
+    #[test]
+    fn parse_persisted_accepts_in_range() {
+        assert_eq!(parse_persisted("80"), Some(80));
+        assert_eq!(parse_persisted(" 60\n"), Some(60));
+    }
+
+    #[test]
+    fn parse_persisted_rejects_out_of_range_and_garbage() {
+        assert_eq!(parse_persisted("39"), None); // below the 40 floor
+        assert_eq!(parse_persisted("250"), None); // parses as u8 but above 100
+        assert_eq!(parse_persisted("xyz"), None);
+        assert_eq!(parse_persisted(""), None);
     }
 }

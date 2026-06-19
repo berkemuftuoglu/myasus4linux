@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Local pre-push gate: same checks CI enforces, run before anything leaves the
+# machine. Enable with: git config core.hooksPath .githooks
+set -euo pipefail
+
+echo "pre-push: cargo fmt --all --check"
+cargo fmt --all --check
+
+echo "pre-push: cargo clippy --workspace --all-targets -- -D warnings"
+cargo clippy --workspace --all-targets -- -D warnings
+
+echo "pre-push: cargo test --workspace"
+cargo test --workspace

@@ -14,6 +14,7 @@ use crate::backend::detect;
 /// The page controllers are held only to keep their components alive; dropping
 /// them would tear down the pages, so they are stored but never read directly.
 pub struct App {
+    toaster: adw::ToastOverlay,
     _overview: Controller<Overview>,
     _battery_page: Option<Controller<BatteryPage>>,
     _cpu_page: Controller<CpuPage>,
@@ -49,7 +50,8 @@ impl SimpleComponent for App {
                 },
 
                 #[wrap(Some)]
-                set_content = &adw::ToastOverlay {
+                #[local_ref]
+                set_content = &toaster -> adw::ToastOverlay {
                     gtk::Box {
                         set_orientation: gtk::Orientation::Horizontal,
 
@@ -86,17 +88,18 @@ impl SimpleComponent for App {
         apply_theme();
 
         let features = detect::detect_features();
+        let toaster = adw::ToastOverlay::new();
 
         let overview =
             Overview::builder()
-                .launch(())
+                .launch(features.clone())
                 .forward(sender.input_sender(), |msg| match msg {
                     super::overview::OverviewOutput::Error(e) => AppInput::ShowToast(e),
                 });
 
         let battery_page = features.battery.then(|| {
             BatteryPage::builder()
-                .launch(())
+                .launch(features.charge_limit)
                 .forward(sender.input_sender(), |msg| match msg {
                     super::battery_page::BatteryOutput::Error(e) => AppInput::ShowToast(e),
                 })
@@ -165,26 +168,10 @@ impl SimpleComponent for App {
             info_page.widget().clone().upcast(),
         ));
 
-        let stack = gtk::Stack::new();
-        let nav = gtk::ListBox::new();
-        for (name, title, icon, widget) in &entries {
-            stack.add_named(widget, Some(name));
-            nav.append(&nav_row(title, icon));
-        }
-
-        let names: Vec<String> = entries.iter().map(|(n, ..)| (*n).to_owned()).collect();
-        let stack_for_nav = stack.clone();
-        nav.connect_row_activated(move |_, row| {
-            let index = usize::try_from(row.index()).unwrap_or(0);
-            if let Some(name) = names.get(index) {
-                stack_for_nav.set_visible_child_name(name);
-            }
-        });
-        if let Some(first) = nav.row_at_index(0) {
-            nav.select_row(Some(&first));
-        }
+        let (stack, nav) = build_navigation(&entries);
 
         let model = App {
+            toaster: toaster.clone(),
             _overview: overview,
             _battery_page: battery_page,
             _cpu_page: cpu_page,
@@ -201,9 +188,34 @@ impl SimpleComponent for App {
         match msg {
             AppInput::ShowToast(text) => {
                 tracing::warn!("{text}");
+                self.toaster.add_toast(adw::Toast::new(&text));
             }
         }
     }
+}
+
+/// Build the sidebar list and the page stack from the ordered nav entries, and
+/// wire row activation to switch the visible page.
+fn build_navigation(entries: &[(&str, &str, &str, gtk::Widget)]) -> (gtk::Stack, gtk::ListBox) {
+    let stack = gtk::Stack::new();
+    let nav = gtk::ListBox::new();
+    for (name, title, icon, widget) in entries {
+        stack.add_named(widget, Some(name));
+        nav.append(&nav_row(title, icon));
+    }
+
+    let names: Vec<String> = entries.iter().map(|(n, ..)| (*n).to_owned()).collect();
+    let stack_for_nav = stack.clone();
+    nav.connect_row_activated(move |_, row| {
+        let index = usize::try_from(row.index()).unwrap_or(0);
+        if let Some(name) = names.get(index) {
+            stack_for_nav.set_visible_child_name(name);
+        }
+    });
+    if let Some(first) = nav.row_at_index(0) {
+        nav.select_row(Some(&first));
+    }
+    (stack, nav)
 }
 
 fn nav_row(title: &str, icon: &str) -> gtk::ListBoxRow {

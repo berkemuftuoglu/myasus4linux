@@ -11,6 +11,12 @@ pub const CHARGE_THRESHOLD_PATH: &str = "/sys/class/power_supply/BAT0/charge_con
 pub const FAN_PROFILE_PATH: &str = "/sys/devices/platform/asus-nb-wmi/throttle_thermal_policy";
 pub const KBD_BACKLIGHT_PATH: &str = "/sys/class/leds/asus::kbd_backlight/brightness";
 
+/// Charge limit bounds. Below `CHARGE_MIN` the battery can over-discharge; the
+/// kernel rejects anything outside this, but owning the range here means the
+/// daemon and the GUI agree on one definition instead of three.
+pub const CHARGE_MIN: u8 = 40;
+pub const CHARGE_MAX: u8 = 100;
+
 /// One privileged write. Carries its own value; the target path is fixed per
 /// variant and never comes from the caller.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,6 +112,19 @@ mod tests {
         assert_eq!(Op::ChargeThreshold(80).path(), CHARGE_THRESHOLD_PATH);
         assert_eq!(Op::FanProfile(1).path(), FAN_PROFILE_PATH);
         assert_eq!(Op::KeyboardBacklight(2).path(), KBD_BACKLIGHT_PATH);
+    }
+
+    #[test]
+    fn every_path_is_an_absolute_sys_attribute() {
+        for op in [
+            Op::ChargeThreshold(80),
+            Op::FanProfile(1),
+            Op::KeyboardBacklight(2),
+        ] {
+            let path = op.path();
+            assert!(path.starts_with("/sys/"), "{path} escapes /sys");
+            assert!(std::path::Path::new(path).is_absolute());
+        }
     }
 
     #[test]

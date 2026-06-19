@@ -1,37 +1,56 @@
 [package]
 name = "myasus4linux"
-version = "0.1.0"
-edition = "2024"
-rust-version = "1.85"
-license = "GPL-3.0-or-later"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
 description = "Open source replacement for ASUS MyASUS on Linux"
-authors = ["Berk Muftuoglu"]
 
 [lints]
 workspace = true
 
 [workspace]
+resolver = "3"
 members = ["crates/myasus-core", "crates/myasusd"]
 
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "GPL-3.0-or-later"
+authors = ["Berk Muftuoglu"]
+# Distributed as Flatpak/distro packages, never to crates.io; this also lets
+# cargo-deny accept the internal path dependencies.
+publish = false
+
+# Versions shared by more than one crate live here so a bump happens in one place.
+[workspace.dependencies]
+myasus-core = { path = "crates/myasus-core" }
+thiserror = "2"
+zbus = "5"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+tempfile = "3"
+
 [dependencies]
+myasus-core.workspace = true
 gtk = { version = "0.10", package = "gtk4" }
 adw = { version = "0.8", package = "libadwaita", features = ["v1_4"] }
 relm4 = { version = "0.10", features = ["libadwaita"] }
 glib = "0.21"
 gio = "0.21"
-thiserror = "2"
-zbus = "5"
-tracing = "0.1"
-tracing-subscriber = "0.3"
-serde = { version = "1", features = ["derive"] }
-toml = "0.8"
-dirs-next = "2"
+thiserror.workspace = true
+zbus.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
 
 [build-dependencies]
 glib-build-tools = "0.21"
 
 [dev-dependencies]
-tempfile = "3"
+tempfile.workspace = true
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
@@ -45,7 +64,7 @@ wildcard_imports = "allow"
 # narrowly-scoped #[allow(reason = ...)] at the call site.
 cast_precision_loss = "allow"
 struct_field_names = "allow"
-assigning_clones = "allow"
+# assigning_clones removed for test
 clone_on_ref_ptr = "warn"
 dbg_macro = "warn"
 print_stderr = "warn"

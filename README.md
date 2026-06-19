@@ -35,7 +35,8 @@ TUF). Controls your model does not expose are detected at startup and hidden.
 - **Lighting**: keyboard backlight (Off, Low, Medium, High) and screen brightness
 - **System**: model, CPU, RAM, kernel, BIOS, plus live memory usage and uptime
 
-The charge limit persists across reboots via a one-shot systemd service.
+The charge limit persists across reboots: the `myasusd` daemon records it on
+every write and re-applies it at startup, before any GUI runs.
 
 ## How privileged controls work
 

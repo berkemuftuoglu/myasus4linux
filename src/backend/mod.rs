@@ -6,6 +6,6 @@ pub mod detect;
 pub mod error;
 pub mod fan;
 pub mod keyboard;
-pub mod settings;
+pub mod safeguards;
 pub mod sysfs;
 pub mod thermal;

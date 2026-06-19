@@ -19,14 +19,19 @@ allow = [
     "Unicode-3.0",
     "Unicode-DFS-2016",
     "MPL-2.0",
+    "CDLA-Permissive-2.0",
     "GPL-3.0-or-later",
     "CC0-1.0",
 ]
+# Don't fail just because an allowed license isn't currently pulled in.
+unused-allowed-license = "allow"
 confidence-threshold = 0.9
 
 [bans]
 multiple-versions = "warn"
-wildcards = "allow"
+wildcards = "deny"
+# Our own crates are wired by path (no version), which is not a real wildcard.
+allow-wildcard-paths = true
 
 [sources]
 unknown-registry = "deny"

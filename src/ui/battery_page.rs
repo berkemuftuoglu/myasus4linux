@@ -5,13 +5,14 @@ use super::battery_cell::BatteryCell;
 use super::gauge::{Accent, Gauge};
 use super::panel::Panel;
 use super::stat::Stat;
-use crate::backend::{battery, error::BackendError, settings};
+use crate::backend::{battery, error::BackendError};
 use crate::format::duration_hm;
 use crate::palette::Rgb;
 
 pub struct BatteryPage {
     charge_threshold: u8,
     charging: bool,
+    charge_supported: bool,
     charge_cell: BatteryCell,
     health_g: Gauge,
     power_s: Stat,
@@ -26,7 +27,10 @@ pub enum BatteryInput {
     LoadValues,
     ValuesLoaded(Box<battery::BatteryInfo>),
     SetChargeThreshold(u8),
-    ThresholdWritten(Result<(), BackendError>),
+    ThresholdWritten {
+        result: Result<(), BackendError>,
+        prev: u8,
+    },
     ReadError(String),
 }
 
@@ -39,10 +43,10 @@ impl BatteryPage {
     /// Push a fresh battery reading into all the widgets.
     fn show_values(&mut self, info: &battery::BatteryInfo) {
         self.charging = info.is_charging();
-        let (charge_label, flow_label) = if self.charging {
-            ("charging", "watts in")
+        let flow_label = if self.charging {
+            "watts in"
         } else {
-            ("battery", "watts out")
+            "watts out"
         };
 
         let cap = info.capacity;
@@ -50,7 +54,7 @@ impl BatteryPage {
             f64::from(cap) / 100.0,
             self.charging,
             &format!("{cap}%"),
-            charge_label,
+            info.status.label(),
         );
 
         let health = info.health_percent;
@@ -102,7 +106,7 @@ impl BatteryPage {
 
 #[relm4::component(pub)]
 impl SimpleComponent for BatteryPage {
-    type Init = ();
+    type Init = bool;
     type Input = BatteryInput;
     type Output = BatteryOutput;
 
@@ -147,6 +151,7 @@ impl SimpleComponent for BatteryPage {
                 gtk::Box {
                     add_css_class: "panel",
                     set_orientation: gtk::Orientation::Vertical,
+                    set_visible: model.charge_supported,
 
                     gtk::Box {
                         add_css_class: "panel-header",
@@ -190,7 +195,9 @@ impl SimpleComponent for BatteryPage {
                             #[block_signal(limit_changed)]
                             set_value: f64::from(model.charge_threshold),
                             connect_value_changed[sender] => move |s| {
-                                sender.input(BatteryInput::SetChargeThreshold(crate::num::round_u8(s.value())));
+                                sender.input(BatteryInput::SetChargeThreshold(
+                                    crate::num::round_u8_in(s.value(), battery::THRESHOLD_MIN, battery::THRESHOLD_MAX),
+                                ));
                             } @limit_changed,
                         },
 
@@ -208,14 +215,14 @@ impl SimpleComponent for BatteryPage {
     }
 
     fn init(
-        _init: Self::Init,
+        charge_supported: Self::Init,
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let saved = settings::load();
         let model = BatteryPage {
-            charge_threshold: saved.charge_threshold,
+            charge_threshold: battery::charge_threshold().unwrap_or(battery::THRESHOLD_DEFAULT),
             charging: false,
+            charge_supported,
             charge_cell: BatteryCell::new(168),
             health_g: Gauge::new(168, Accent::Fixed(Rgb::new(0.4, 0.7, 1.0))),
             power_s: Stat::with_spark("Power Flow", Rgb::new(0.4, 0.7, 1.0)),
@@ -258,7 +265,7 @@ impl SimpleComponent for BatteryPage {
 
         sender.input(BatteryInput::LoadValues);
         let ticker = sender.clone();
-        glib::timeout_add_seconds_local(2, move || {
+        glib::timeout_add_seconds_local(crate::ui::POLL_SECS, move || {
             ticker.input(BatteryInput::LoadValues);
             glib::ControlFlow::Continue
         });
@@ -268,13 +275,11 @@ impl SimpleComponent for BatteryPage {
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
         match msg {
             BatteryInput::LoadValues => {
-                let input_sender = sender.input_sender().clone();
-                std::thread::spawn(move || {
-                    let msg = match battery::read_battery_info() {
+                crate::ui::offload(sender.input_sender(), || {
+                    match battery::read_battery_info() {
                         Ok(info) => BatteryInput::ValuesLoaded(Box::new(info)),
                         Err(e) => BatteryInput::ReadError(e.to_string()),
-                    };
-                    let _ = input_sender.send(msg);
+                    }
                 });
             }
             BatteryInput::ValuesLoaded(info) => self.show_values(&info),
@@ -282,28 +287,21 @@ impl SimpleComponent for BatteryPage {
                 if val == self.charge_threshold {
                     return;
                 }
+                let prev = self.charge_threshold;
                 self.charge_threshold = val;
-                let input_sender = sender.input_sender().clone();
-                std::thread::spawn(move || {
-                    let _ = input_sender.send(BatteryInput::ThresholdWritten(
-                        battery::set_charge_threshold(val),
-                    ));
+                crate::ui::offload(sender.input_sender(), move || {
+                    BatteryInput::ThresholdWritten {
+                        result: battery::set_charge_threshold(val),
+                        prev,
+                    }
                 });
             }
-            BatteryInput::ThresholdWritten(result) => match result {
-                Ok(()) => {
-                    let mut s = settings::load();
-                    s.charge_threshold = self.charge_threshold;
-                    if let Err(e) = settings::save(&s) {
-                        let _ = sender.output(BatteryOutput::Error(format!(
-                            "charge limit applied but not saved: {e}"
-                        )));
-                    }
-                }
-                Err(e) => {
+            BatteryInput::ThresholdWritten { result, prev } => {
+                if let Err(e) = result {
+                    self.charge_threshold = prev;
                     let _ = sender.output(BatteryOutput::Error(e.to_string()));
                 }
-            },
+            }
             BatteryInput::ReadError(msg) => {
                 let _ = sender.output(BatteryOutput::Error(msg));
             }

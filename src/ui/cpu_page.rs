@@ -6,11 +6,17 @@ use super::gauge::{Accent, Gauge};
 use super::ledbar::LedBar;
 use super::panel::Panel;
 use super::stat::Stat;
-use crate::backend::{cpu::CpuMonitor, fan};
+use crate::backend::{
+    cpu::{CoreStat, CpuMonitor},
+    fan,
+};
 use crate::palette::{self, Rgb};
 
 pub struct CpuPage {
-    monitor: CpuMonitor,
+    // The monitor lives behind an Option so it can be handed to the worker
+    // thread for a sample and handed back on return, keeping its cross-sample
+    // delta state without ever reading sysfs on the GTK main thread.
+    monitor: Option<CpuMonitor>,
     load_g: Gauge,
     temp_g: Gauge,
     freq_s: Stat,
@@ -23,6 +29,15 @@ pub struct CpuPage {
 #[derive(Debug)]
 pub enum CpuInput {
     Tick,
+    Sampled(Box<CpuSample>),
+}
+
+/// Plain data carried back from the worker thread: no GTK, no borrowed state.
+#[derive(Debug)]
+pub struct CpuSample {
+    monitor: CpuMonitor,
+    cores: Vec<CoreStat>,
+    temp: Option<f64>,
 }
 
 #[relm4::component(pub)]
@@ -80,8 +95,11 @@ impl SimpleComponent for CpuPage {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
+        let mut monitor = CpuMonitor::new();
+        let cores = monitor.sample();
+
         let mut model = CpuPage {
-            monitor: CpuMonitor::new(),
+            monitor: Some(monitor),
             load_g: Gauge::new(168, Accent::ByValue),
             temp_g: Gauge::new(168, Accent::ByValue),
             freq_s: Stat::with_spark("Average Frequency", palette::GOOD),
@@ -113,21 +131,12 @@ impl SimpleComponent for CpuPage {
             -1,
         );
 
-        model
-            .core_panel
-            .body
-            .set_orientation(gtk::Orientation::Vertical);
-        model.core_panel.body.set_spacing(8);
-        for core in model.monitor.sample() {
-            let led = LedBar::new(&format!("Core {}", core.id));
-            model.core_panel.body.append(&led.root);
-            model.core_leds.push(led);
-        }
+        super::cores::build(&model.core_panel, &mut model.core_leds, &cores);
         widgets.cores_slot.append(&model.core_panel.root);
 
         sender.input(CpuInput::Tick);
         let ticker = sender.clone();
-        glib::timeout_add_seconds_local(1, move || {
+        glib::timeout_add_seconds_local(crate::ui::POLL_SECS, move || {
             ticker.input(CpuInput::Tick);
             glib::ControlFlow::Continue
         });
@@ -135,10 +144,30 @@ impl SimpleComponent for CpuPage {
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, msg: Self::Input, _sender: ComponentSender<Self>) {
+    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
         match msg {
             CpuInput::Tick => {
-                let cores = self.monitor.sample();
+                // Skip if the previous sample is still running so reads can't pile up.
+                if let Some(mut monitor) = self.monitor.take() {
+                    crate::ui::offload(sender.input_sender(), move || {
+                        let cores = monitor.sample();
+                        let temp = fan::read_cpu_temp();
+                        CpuInput::Sampled(Box::new(CpuSample {
+                            monitor,
+                            cores,
+                            temp,
+                        }))
+                    });
+                }
+            }
+            CpuInput::Sampled(sample) => {
+                let CpuSample {
+                    monitor,
+                    cores,
+                    temp,
+                } = *sample;
+                self.monitor = Some(monitor);
+
                 let n = cores.len().max(1) as f64;
                 let load = cores.iter().map(|c| c.load).sum::<f64>() / n;
                 let freq = f64::from(cores.iter().map(|c| c.mhz).sum::<u32>()) / n / 1000.0;
@@ -149,15 +178,10 @@ impl SimpleComponent for CpuPage {
                 self.freq_s.set(&format!("{freq:.1}"), "GHz, all cores");
                 self.freq_s.push(freq);
 
-                for (core, led) in cores.iter().zip(&self.core_leds) {
-                    led.set(
-                        core.load / 100.0,
-                        &format!("{:.1}GHz", f64::from(core.mhz) / 1000.0),
-                    );
-                }
+                super::cores::update(&self.core_leds, &cores);
                 self.core_panel.set_corner(&format!("avg {load:.0}%"));
 
-                if let Some(temp) = fan::read_cpu_temp() {
+                if let Some(temp) = temp {
                     self.temp_g
                         .set(temp / 100.0, &format!("{temp:.0}°"), "package");
                     self.temp_chart.push(temp);

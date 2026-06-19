@@ -80,8 +80,8 @@ impl Gauge {
     /// `frac` is 0.0..=1.0 (fill amount); `big` is the centre value, `sub` the label.
     pub fn set(&self, frac: f64, big: &str, sub: &str) {
         self.target.set(frac.clamp(0.0, 1.0));
-        *self.big.borrow_mut() = big.to_owned();
-        *self.sub.borrow_mut() = sub.to_owned();
+        big.clone_into(&mut self.big.borrow_mut());
+        sub.clone_into(&mut self.sub.borrow_mut());
         self.area.queue_draw();
     }
 }
