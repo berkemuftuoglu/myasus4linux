@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use myasus_core::Op;
 use zbus::message::Header;
@@ -22,10 +22,12 @@ enum HelperError {
     Validate(#[from] myasus_core::ValidateError),
     #[error("failed to write {path}: {source}")]
     Write {
-        path: &'static str,
+        path: String,
         #[source]
         source: std::io::Error,
     },
+    #[error("no battery with a charge-threshold control was found")]
+    NoBattery,
     #[error("authorization check failed: {0}")]
     Polkit(#[from] zbus::Error),
     #[error("could not identify caller: {0}")]
@@ -37,9 +39,10 @@ impl From<HelperError> for zbus::fdo::Error {
         match e {
             HelperError::NotAuthorized => zbus::fdo::Error::AccessDenied(e.to_string()),
             HelperError::Validate(_) => zbus::fdo::Error::InvalidArgs(e.to_string()),
-            HelperError::Write { .. } | HelperError::Polkit(_) | HelperError::Subject(_) => {
-                zbus::fdo::Error::Failed(e.to_string())
-            }
+            HelperError::Write { .. }
+            | HelperError::NoBattery
+            | HelperError::Polkit(_)
+            | HelperError::Subject(_) => zbus::fdo::Error::Failed(e.to_string()),
         }
     }
 }
@@ -97,17 +100,17 @@ async fn apply(
 ) -> Result<(), HelperError> {
     authorize(connection, header, action_id).await?;
     op.validate()?;
-    let path = op.path();
-    // Defence in depth: the path is a fixed constant per Op and never caller-
-    // supplied, but a privileged writer must still refuse anything that is not an
-    // absolute /sys attribute, so a future Op variant can't become an arbitrary
-    // write. Empty or relative paths fail this check.
-    if !std::path::Path::new(path).is_absolute() {
+    let target = resolve_target(op)?;
+    // Defence in depth: the path is never caller-supplied (fixed per Op, or built
+    // from the kernel's own power-supply enumeration), but a privileged writer
+    // must still refuse anything that is not an absolute /sys attribute, so a bug
+    // can't turn into an arbitrary write.
+    if !target.is_absolute() || !target.starts_with("/sys/") {
         return Err(HelperError::Write {
-            path,
+            path: target.display().to_string(),
             source: std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                "refusing to write a non-absolute path",
+                "refusing to write a non-/sys path",
             ),
         });
     }
@@ -116,12 +119,13 @@ async fn apply(
     // Run the sysfs (and state-file) writes on a blocking thread so they never
     // stall the async D-Bus executor. The outer map_err handles a panicked
     // worker; the inner one handles the write itself failing.
+    let write_path = target.clone();
     tokio::task::spawn_blocking(move || -> std::io::Result<()> {
         // Skip the EC write when the value is already programmed -- rewriting the
         // same value churns the embedded controller for nothing. A failed or
         // absent read just falls through to writing.
-        if read_sysfs_u8(path) != Some(value) {
-            std::fs::write(path, value.to_string())?;
+        if read_sysfs_u8(&write_path) != Some(value) {
+            std::fs::write(&write_path, value.to_string())?;
         }
         if persist {
             persist_charge_threshold(value);
@@ -130,12 +134,26 @@ async fn apply(
     })
     .await
     .map_err(|join| HelperError::Write {
-        path,
+        path: target.display().to_string(),
         source: std::io::Error::other(join),
     })?
-    .map_err(|source| HelperError::Write { path, source })?;
-    tracing::info!("wrote {value} to {path}");
+    .map_err(|source| HelperError::Write {
+        path: target.display().to_string(),
+        source,
+    })?;
+    tracing::info!("wrote {value} to {}", target.display());
     Ok(())
+}
+
+/// The sysfs attribute an `Op` writes. Fixed for fan/keyboard; for the charge
+/// threshold the battery is enumerated (not always BAT0), resolved from the
+/// kernel's power-supply tree here -- the value never carries a path.
+fn resolve_target(op: Op) -> Result<PathBuf, HelperError> {
+    match op.fixed_path() {
+        Some(p) => Ok(PathBuf::from(p)),
+        None => myasus_core::charge_threshold_path(Path::new(myasus_core::POWER_SUPPLY_ROOT))
+            .ok_or(HelperError::NoBattery),
+    }
 }
 
 /// Record the charge limit for [`restore_charge_threshold`]. Best-effort: a
@@ -163,7 +181,7 @@ fn write_state(path: &Path, value: u8) -> std::io::Result<()> {
 
 /// Read a small unsigned value from a sysfs attribute, `None` if missing or
 /// unparseable. Used to skip rewriting a value the EC already holds.
-fn read_sysfs_u8(path: &str) -> Option<u8> {
+fn read_sysfs_u8(path: &Path) -> Option<u8> {
     std::fs::read_to_string(path).ok()?.trim().parse().ok()
 }
 
@@ -185,12 +203,16 @@ pub fn restore_charge_threshold() {
         tracing::warn!("ignoring malformed or out-of-range persisted charge threshold {raw:?}");
         return;
     };
-    let op = Op::ChargeThreshold(value);
-    if read_sysfs_u8(op.path()) == Some(value) {
+    let Some(target) = myasus_core::charge_threshold_path(Path::new(myasus_core::POWER_SUPPLY_ROOT))
+    else {
+        tracing::warn!("no battery charge-threshold control found; cannot restore");
+        return;
+    };
+    if read_sysfs_u8(&target) == Some(value) {
         tracing::info!("charge threshold already {value} on startup, nothing to restore");
         return;
     }
-    match std::fs::write(op.path(), op.raw_value().to_string()) {
+    match std::fs::write(&target, value.to_string()) {
         Ok(()) => tracing::info!("restored charge threshold {value} on startup"),
         Err(e) => tracing::warn!("could not restore charge threshold: {e}"),
     }

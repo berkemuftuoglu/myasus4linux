@@ -11,5 +11,8 @@ description = "Shared privileged-operation contract for myasus4linux (paths, val
 [dependencies]
 thiserror.workspace = true
 
+[dev-dependencies]
+tempfile.workspace = true
+
 [lints]
 workspace = true

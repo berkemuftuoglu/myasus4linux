@@ -1,10 +1,20 @@
-use super::detect;
+use std::path::{Path, PathBuf};
+
 use super::error::BackendError;
-use super::sysfs;
 
 pub const THRESHOLD_MIN: u8 = myasus_core::CHARGE_MIN;
 pub const THRESHOLD_MAX: u8 = myasus_core::CHARGE_MAX;
 pub const THRESHOLD_DEFAULT: u8 = 80;
+
+/// The resolved battery directory, or `None` on a machine without one. The
+/// device is not always `BAT0`, so it is enumerated rather than hardcoded.
+pub fn battery_dir() -> Option<PathBuf> {
+    myasus_core::battery_dir(Path::new(myasus_core::POWER_SUPPLY_ROOT))
+}
+
+fn read_attr<T: std::str::FromStr>(dir: &Path, attr: &str) -> Option<T> {
+    std::fs::read_to_string(dir.join(attr)).ok()?.trim().parse().ok()
+}
 
 const HEALTH_GOOD: f64 = 80.0;
 const HEALTH_FAIR: f64 = 50.0;
@@ -100,25 +110,24 @@ impl BatteryInfo {
 }
 
 pub fn read_battery_info() -> Result<BatteryInfo, BackendError> {
-    let capacity: u8 = sysfs::read_value(detect::BAT_CAPACITY)?;
-    let status = BatteryStatus::parse(&sysfs::read(detect::BAT_STATUS)?);
+    let dir = battery_dir().ok_or(BackendError::NoBattery)?;
+    let capacity: u8 = read_attr(&dir, "capacity").ok_or(BackendError::NoBattery)?;
+    let status =
+        BatteryStatus::parse(&std::fs::read_to_string(dir.join("status")).unwrap_or_default());
 
-    let charge_full = sysfs::read_value::<u64>(detect::BAT_CHARGE_FULL).ok();
-    let health_percent = match (
-        charge_full,
-        sysfs::read_value::<f64>(detect::BAT_CHARGE_FULL_DESIGN),
-    ) {
-        (Some(full), Ok(design)) => health_from_charge(full, design),
+    let charge_full = read_attr::<u64>(&dir, "charge_full");
+    let health_percent = match (charge_full, read_attr::<f64>(&dir, "charge_full_design")) {
+        (Some(full), Some(design)) => health_from_charge(full, design),
         _ => 100.0,
     };
 
-    let cycle_count = sysfs::read_value::<u32>(detect::BAT_CYCLE_COUNT).ok();
-    let charge_threshold = sysfs::read_value::<u8>(detect::CHARGE_CONTROL_END_THRESHOLD).ok();
+    let cycle_count = read_attr::<u32>(&dir, "cycle_count");
+    let charge_threshold = read_attr::<u8>(&dir, myasus_core::CHARGE_THRESHOLD_ATTR);
 
     // sysfs reports micro-volts / micro-amps / micro-amp-hours
-    let voltage_uv = sysfs::read_value::<u64>(detect::BAT_VOLTAGE_NOW).ok();
-    let current_ua = sysfs::read_value::<i64>(detect::BAT_CURRENT_NOW).ok();
-    let charge_now = sysfs::read_value::<u64>(detect::BAT_CHARGE_NOW).ok();
+    let voltage_uv = read_attr::<u64>(&dir, "voltage_now");
+    let current_ua = read_attr::<i64>(&dir, "current_now");
+    let charge_now = read_attr::<u64>(&dir, "charge_now");
 
     let power_w = match (voltage_uv, current_ua) {
         (Some(v), Some(i)) => Some(power_watts(v, i)),
@@ -183,7 +192,7 @@ fn power_watts(voltage_uv: u64, current_ua: i64) -> f64 {
 /// The daemon restores this on boot, so the live kernel value is the single
 /// source of truth for the slider -- no separate config file to drift from it.
 pub fn charge_threshold() -> Option<u8> {
-    sysfs::read_value::<u8>(detect::CHARGE_CONTROL_END_THRESHOLD).ok()
+    read_attr(&battery_dir()?, myasus_core::CHARGE_THRESHOLD_ATTR)
 }
 
 pub fn set_charge_threshold(value: u8) -> Result<(), BackendError> {

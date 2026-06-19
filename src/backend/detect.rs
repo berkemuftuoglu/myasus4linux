@@ -1,24 +1,8 @@
 use super::sysfs;
 
-// The three writable controls share their paths with the daemon; myasus-core
-// owns the literals so the GUI and the daemon can never disagree on a path.
-pub const CHARGE_CONTROL_END_THRESHOLD: &str = myasus_core::CHARGE_THRESHOLD_PATH;
-pub const BAT_CAPACITY: &str = "/sys/class/power_supply/BAT0/capacity";
-pub const BAT_STATUS: &str = "/sys/class/power_supply/BAT0/status";
-
-/// Value in microamp-hours.
-pub const BAT_CHARGE_FULL: &str = "/sys/class/power_supply/BAT0/charge_full";
-
-/// Value in microamp-hours.
-pub const BAT_CHARGE_FULL_DESIGN: &str = "/sys/class/power_supply/BAT0/charge_full_design";
-
-/// Charge remaining, in microamp-hours.
-pub const BAT_CHARGE_NOW: &str = "/sys/class/power_supply/BAT0/charge_now";
-
-pub const BAT_CYCLE_COUNT: &str = "/sys/class/power_supply/BAT0/cycle_count";
-pub const BAT_VOLTAGE_NOW: &str = "/sys/class/power_supply/BAT0/voltage_now";
-pub const BAT_CURRENT_NOW: &str = "/sys/class/power_supply/BAT0/current_now";
-
+// The writable controls share their paths with the daemon; myasus-core owns the
+// literals so the GUI and the daemon can never disagree. The battery is resolved
+// at runtime (see `battery::battery_dir`) because it is not always `BAT0`.
 pub const THROTTLE_THERMAL_POLICY: &str = myasus_core::FAN_PROFILE_PATH;
 
 pub const KBD_BACKLIGHT: &str = myasus_core::KBD_BACKLIGHT_PATH;
@@ -48,9 +32,14 @@ pub struct HardwareFeatures {
 
 /// Probe sysfs paths and return a [`HardwareFeatures`] summary.
 pub fn detect_features() -> HardwareFeatures {
+    let battery_dir = super::battery::battery_dir();
     HardwareFeatures {
-        battery: sysfs::exists(BAT_CAPACITY) && sysfs::exists(BAT_STATUS),
-        charge_limit: sysfs::exists(CHARGE_CONTROL_END_THRESHOLD),
+        battery: battery_dir
+            .as_ref()
+            .is_some_and(|d| d.join("capacity").exists() && d.join("status").exists()),
+        charge_limit: battery_dir
+            .as_ref()
+            .is_some_and(|d| d.join(myasus_core::CHARGE_THRESHOLD_ATTR).exists()),
         fan_profile: sysfs::exists(THROTTLE_THERMAL_POLICY),
         keyboard_backlight: sysfs::exists(KBD_BACKLIGHT),
     }

@@ -1,13 +1,31 @@
+// Panics/indexing are fine in tests; the panic-class lints only guard production.
+#![cfg_attr(
+    test,
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing
+    )
+)]
+
 //! Shared contract for the privileged operations the root helper performs.
 //!
 //! Paths, value ranges, and serialisation live here in exactly one place. The
 //! daemon validates through this and writes the fixed path; a new privileged
 //! feature adds a variant here rather than inventing another ad-hoc escalation
-//! path. Nothing here trusts a caller-supplied path. This crate is GTK-free and
-//! I/O-free so it stays 100% unit-testable -- the actual write lives in the
-//! daemon.
+//! path. Nothing here trusts a caller-supplied path. This crate is GTK-free;
+//! the only I/O is the battery-directory resolver, which takes an injectable
+//! root so it stays temp-dir testable.
 
-pub const CHARGE_THRESHOLD_PATH: &str = "/sys/class/power_supply/BAT0/charge_control_end_threshold";
+use std::path::{Path, PathBuf};
+
+/// Root under which the kernel exposes batteries and AC adapters. The battery is
+/// NOT always `BAT0` (real non-ROG laptops use `BAT1`/`BATT`/`BATC`), so the
+/// device is resolved at runtime by [`battery_dir`] rather than hardcoded.
+pub const POWER_SUPPLY_ROOT: &str = "/sys/class/power_supply";
+/// The charge-limit control, relative to the resolved battery directory.
+pub const CHARGE_THRESHOLD_ATTR: &str = "charge_control_end_threshold";
 pub const FAN_PROFILE_PATH: &str = "/sys/devices/platform/asus-nb-wmi/throttle_thermal_policy";
 pub const KBD_BACKLIGHT_PATH: &str = "/sys/class/leds/asus::kbd_backlight/brightness";
 
@@ -58,12 +76,15 @@ impl Op {
         }
     }
 
-    /// The fixed sysfs path this operation writes. Never caller-influenced.
-    pub fn path(self) -> &'static str {
+    /// The fixed sysfs path for operations that have one, or `None` for those
+    /// whose device must be resolved at runtime. Only [`Op::ChargeThreshold`] is
+    /// runtime-resolved (the battery enumerates as BAT0/BAT1/...); the daemon
+    /// builds its path with [`charge_threshold_path`]. Never caller-influenced.
+    pub fn fixed_path(self) -> Option<&'static str> {
         match self {
-            Op::ChargeThreshold(_) => CHARGE_THRESHOLD_PATH,
-            Op::FanProfile(_) => FAN_PROFILE_PATH,
-            Op::KeyboardBacklight(_) => KBD_BACKLIGHT_PATH,
+            Op::ChargeThreshold(_) => None,
+            Op::FanProfile(_) => Some(FAN_PROFILE_PATH),
+            Op::KeyboardBacklight(_) => Some(KBD_BACKLIGHT_PATH),
         }
     }
 
@@ -72,6 +93,72 @@ impl Op {
             Op::ChargeThreshold(v) | Op::FanProfile(v) | Op::KeyboardBacklight(v) => v,
         }
     }
+}
+
+/// Resolve the main battery's sysfs directory under `root` (normally
+/// [`POWER_SUPPLY_ROOT`]). Follows asusctl's cascade: prefer the device exposing
+/// the charge-threshold control, else a sysname starting `BAT`, else any
+/// `type == Battery`. When several qualify, the largest design capacity wins so
+/// a tiny secondary cell or UPS can't shadow the main pack. `None` on a desktop
+/// with no battery.
+pub fn battery_dir(root: &Path) -> Option<PathBuf> {
+    let batteries: Vec<PathBuf> = std::fs::read_dir(root)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| is_battery(p))
+        .collect();
+
+    let with_attr: Vec<PathBuf> = batteries
+        .iter()
+        .filter(|p| p.join(CHARGE_THRESHOLD_ATTR).exists())
+        .cloned()
+        .collect();
+    if let Some(best) = largest_capacity(&with_attr) {
+        return Some(best);
+    }
+
+    let named: Vec<PathBuf> = batteries
+        .iter()
+        .filter(|p| sysname_starts_with_bat(p))
+        .cloned()
+        .collect();
+    if let Some(best) = largest_capacity(&named) {
+        return Some(best);
+    }
+
+    largest_capacity(&batteries)
+}
+
+/// Full path to the charge-limit control on the resolved battery, if present.
+pub fn charge_threshold_path(root: &Path) -> Option<PathBuf> {
+    Some(battery_dir(root)?.join(CHARGE_THRESHOLD_ATTR))
+}
+
+fn is_battery(dir: &Path) -> bool {
+    std::fs::read_to_string(dir.join("type")).is_ok_and(|t| t.trim().eq_ignore_ascii_case("Battery"))
+}
+
+fn sysname_starts_with_bat(dir: &Path) -> bool {
+    dir.file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.to_ascii_uppercase().starts_with("BAT"))
+}
+
+/// Design capacity as a comparable magnitude (energy uWh if present, else charge
+/// uAh) used only to rank candidate batteries, never as an absolute value.
+fn design_capacity(dir: &Path) -> u64 {
+    read_u64(dir, "energy_full_design")
+        .or_else(|| read_u64(dir, "charge_full_design"))
+        .unwrap_or(0)
+}
+
+fn read_u64(dir: &Path, attr: &str) -> Option<u64> {
+    std::fs::read_to_string(dir.join(attr)).ok()?.trim().parse().ok()
+}
+
+fn largest_capacity(candidates: &[PathBuf]) -> Option<PathBuf> {
+    candidates.iter().max_by_key(|p| design_capacity(p)).cloned()
 }
 
 #[cfg(test)]
@@ -116,22 +203,74 @@ mod tests {
     }
 
     #[test]
-    fn paths_are_fixed_per_variant() {
-        assert_eq!(Op::ChargeThreshold(80).path(), CHARGE_THRESHOLD_PATH);
-        assert_eq!(Op::FanProfile(1).path(), FAN_PROFILE_PATH);
-        assert_eq!(Op::KeyboardBacklight(2).path(), KBD_BACKLIGHT_PATH);
+    fn fixed_paths_per_variant() {
+        // The charge threshold is resolved at runtime (battery enumerates), so
+        // it has no fixed path; the other two are fixed.
+        assert_eq!(Op::ChargeThreshold(80).fixed_path(), None);
+        assert_eq!(Op::FanProfile(1).fixed_path(), Some(FAN_PROFILE_PATH));
+        assert_eq!(Op::KeyboardBacklight(2).fixed_path(), Some(KBD_BACKLIGHT_PATH));
     }
 
     #[test]
-    fn every_path_is_an_absolute_sys_attribute() {
-        for op in [
-            Op::ChargeThreshold(80),
-            Op::FanProfile(1),
-            Op::KeyboardBacklight(2),
-        ] {
-            let path = op.path();
+    fn fixed_paths_are_absolute_sys_attributes() {
+        for op in [Op::FanProfile(1), Op::KeyboardBacklight(2)] {
+            let path = op.fixed_path().unwrap();
             assert!(path.starts_with("/sys/"), "{path} escapes /sys");
-            assert!(std::path::Path::new(path).is_absolute());
+            assert!(Path::new(path).is_absolute());
+        }
+    }
+
+    #[test]
+    fn battery_dir_prefers_threshold_then_bat_then_largest() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        // BAT0: a battery but no charge-threshold control.
+        mk_battery(root, "BAT0", Some(50_000_000), None);
+        // BAT1: exposes the threshold control -> wins tier 1.
+        mk_battery(root, "BAT1", Some(60_000_000), Some(80));
+        assert_eq!(battery_dir(root), Some(root.join("BAT1")));
+    }
+
+    #[test]
+    fn battery_dir_skips_tiny_secondary_cell() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        // A tiny UPS-like cell with the control, and the real main pack with it.
+        mk_battery(root, "BATT", Some(5_000_000), Some(80));
+        mk_battery(root, "BAT0", Some(62_000_000), Some(80));
+        assert_eq!(battery_dir(root), Some(root.join("BAT0")));
+    }
+
+    #[test]
+    fn battery_dir_none_without_a_battery() {
+        let dir = tempfile::tempdir().unwrap();
+        // An AC adapter is present but no battery (desktop).
+        let ac = dir.path().join("AC0");
+        std::fs::create_dir_all(&ac).unwrap();
+        std::fs::write(ac.join("type"), "Mains\n").unwrap();
+        assert_eq!(battery_dir(dir.path()), None);
+    }
+
+    #[test]
+    fn charge_threshold_path_joins_resolved_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        mk_battery(root, "BATC", Some(50_000_000), Some(80));
+        assert_eq!(
+            charge_threshold_path(root),
+            Some(root.join("BATC").join(CHARGE_THRESHOLD_ATTR))
+        );
+    }
+
+    fn mk_battery(root: &Path, name: &str, energy_full_design: Option<u64>, threshold: Option<u8>) {
+        let d = root.join(name);
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join("type"), "Battery\n").unwrap();
+        if let Some(e) = energy_full_design {
+            std::fs::write(d.join("energy_full_design"), format!("{e}\n")).unwrap();
+        }
+        if let Some(t) = threshold {
+            std::fs::write(d.join(CHARGE_THRESHOLD_ATTR), format!("{t}\n")).unwrap();
         }
     }
 

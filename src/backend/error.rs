@@ -23,6 +23,9 @@ pub enum BackendError {
     #[error("unknown fan profile value {0}")]
     UnknownFanProfile(u8),
 
+    #[error("no battery present")]
+    NoBattery,
+
     #[error(transparent)]
     Validate(#[from] myasus_core::ValidateError),
 
