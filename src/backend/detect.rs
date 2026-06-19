@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use super::sysfs;
 
 // The writable controls share their paths with the daemon; myasus-core owns the
@@ -42,7 +44,9 @@ pub fn detect_features() -> HardwareFeatures {
             .is_some_and(|d| d.join(myasus_core::CHARGE_THRESHOLD_ATTR).exists()),
         fan_profile: sysfs::exists(THROTTLE_THERMAL_POLICY)
             || sysfs::exists(myasus_core::PLATFORM_PROFILE_PATH),
-        keyboard_backlight: sysfs::exists(KBD_BACKLIGHT),
+        keyboard_backlight: myasus_core::kbd_backlight_path(Path::new(myasus_core::LEDS_ROOT))
+            .is_some()
+            || sysfs::exists(KBD_BACKLIGHT),
     }
 }
 

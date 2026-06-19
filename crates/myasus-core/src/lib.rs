@@ -33,6 +33,9 @@ pub const PLATFORM_PROFILE_PATH: &str = "/sys/firmware/acpi/platform_profile";
 /// Space-separated tokens this machine's `platform_profile` accepts.
 pub const PLATFORM_PROFILE_CHOICES_PATH: &str = "/sys/firmware/acpi/platform_profile_choices";
 pub const KBD_BACKLIGHT_PATH: &str = "/sys/class/leds/asus::kbd_backlight/brightness";
+/// Root under which the kernel exposes LEDs. The keyboard backlight's sysname is
+/// vendor-prefixed and varies, so it is matched at runtime by [`kbd_backlight_path`].
+pub const LEDS_ROOT: &str = "/sys/class/leds";
 
 /// The well-known D-Bus name the privileged helper owns on the system bus, and
 /// the object path it serves. The daemon connects/serves with these; the client
@@ -138,6 +141,22 @@ pub fn battery_dir(root: &Path) -> Option<PathBuf> {
 /// Full path to the charge-limit control on the resolved battery, if present.
 pub fn charge_threshold_path(root: &Path) -> Option<PathBuf> {
     Some(battery_dir(root)?.join(CHARGE_THRESHOLD_ATTR))
+}
+
+/// Resolve the keyboard backlight `brightness` attribute under `root` (normally
+/// [`LEDS_ROOT`]). Matches any LED whose sysname contains `kbd_backlight`, since
+/// the vendor prefix varies (`asus::kbd_backlight`, ...). `None` if absent.
+pub fn kbd_backlight_path(root: &Path) -> Option<PathBuf> {
+    std::fs::read_dir(root)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.contains("kbd_backlight"))
+        })
+        .map(|p| p.join("brightness"))
 }
 
 /// The `platform_profile` token for a canonical fan-profile value (0=balanced,
@@ -276,6 +295,23 @@ mod tests {
             charge_threshold_path(root),
             Some(root.join("BATC").join(CHARGE_THRESHOLD_ATTR))
         );
+    }
+
+    #[test]
+    fn kbd_backlight_matches_vendor_prefixed_led() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("input3::capslock")).unwrap();
+        let kbd = root.join("asus::kbd_backlight");
+        std::fs::create_dir_all(&kbd).unwrap();
+        assert_eq!(kbd_backlight_path(root), Some(kbd.join("brightness")));
+    }
+
+    #[test]
+    fn kbd_backlight_none_when_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("input3::scrolllock")).unwrap();
+        assert_eq!(kbd_backlight_path(dir.path()), None);
     }
 
     fn mk_battery(root: &Path, name: &str, energy_full_design: Option<u64>, threshold: Option<u8>) {

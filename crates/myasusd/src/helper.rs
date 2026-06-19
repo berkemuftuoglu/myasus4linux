@@ -163,7 +163,9 @@ fn resolve_write(op: Op) -> Result<(PathBuf, String), HelperError> {
             Ok((p, v.to_string()))
         }
         Op::KeyboardBacklight(v) => {
-            Ok((PathBuf::from(myasus_core::KBD_BACKLIGHT_PATH), v.to_string()))
+            let p = myasus_core::kbd_backlight_path(Path::new(myasus_core::LEDS_ROOT))
+                .unwrap_or_else(|| PathBuf::from(myasus_core::KBD_BACKLIGHT_PATH));
+            Ok((p, v.to_string()))
         }
         Op::FanProfile(v) => fan_profile_write(v),
     }

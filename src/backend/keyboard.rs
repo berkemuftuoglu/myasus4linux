@@ -1,9 +1,23 @@
-use super::detect;
+use std::path::{Path, PathBuf};
+
 use super::error::BackendError;
-use super::sysfs;
+
+/// The keyboard backlight `brightness` attribute, resolved at runtime (the LED's
+/// sysname is vendor-prefixed and varies), falling back to the canonical literal.
+fn kbd_path() -> PathBuf {
+    myasus_core::kbd_backlight_path(Path::new(myasus_core::LEDS_ROOT))
+        .unwrap_or_else(|| PathBuf::from(myasus_core::KBD_BACKLIGHT_PATH))
+}
 
 pub fn read_brightness() -> Result<u8, BackendError> {
-    sysfs::read_value(detect::KBD_BACKLIGHT)
+    let path = kbd_path();
+    std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .ok_or_else(|| BackendError::SysfsRead {
+            path: path.display().to_string(),
+            source: std::io::Error::new(std::io::ErrorKind::NotFound, "keyboard backlight"),
+        })
 }
 
 pub fn set_brightness(value: u8) -> Result<(), BackendError> {
