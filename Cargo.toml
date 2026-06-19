@@ -55,3 +55,4 @@ indexing_slicing = "deny"
 
 [lints.rust]
 unsafe_code = "deny"
+rust_2018_idioms = { level = "warn", priority = -1 }

@@ -2,14 +2,17 @@
 
 default: check
 
-# Everything: format, lint, test, supply-chain.
-check: fmt clippy test deny audit
+# Everything: format, lint, docs, test, supply-chain.
+check: fmt clippy doc test deny audit
 
 fmt:
     cargo fmt --check
 
 clippy:
     cargo clippy --all-targets --locked -- -D warnings
+
+doc:
+    RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items
 
 test:
     cargo test --locked
