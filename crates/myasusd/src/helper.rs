@@ -143,11 +143,17 @@ fn persist_charge_threshold(value: u8) {
 
 /// Write the charge value to `path`, creating its parent directory. Path is
 /// injectable so the round-trip can be exercised without touching `/var/lib`.
+///
+/// Atomic: write a sibling temp then rename over the target. A crash or
+/// power-loss mid-write can then never leave a half-written threshold that the
+/// daemon would read back as garbage on the next boot.
 fn write_state(path: &Path, value: u8) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(path, value.to_string())
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, value.to_string())?;
+    std::fs::rename(&tmp, path)
 }
 
 /// Parse and range-check persisted state. None for malformed or out-of-range
@@ -211,6 +217,18 @@ mod tests {
         write_state(&path, 70).unwrap();
         let raw = std::fs::read_to_string(&path).unwrap();
         assert_eq!(parse_persisted(&raw), Some(70));
+        // The atomic write must not leave its temp file behind.
+        assert!(!path.with_extension("tmp").exists());
+    }
+
+    #[test]
+    fn write_state_overwrites_atomically() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("charge_threshold");
+        write_state(&path, 60).unwrap();
+        write_state(&path, 85).unwrap();
+        assert_eq!(parse_persisted(&std::fs::read_to_string(&path).unwrap()), Some(85));
+        assert!(!path.with_extension("tmp").exists());
     }
 
     #[test]
