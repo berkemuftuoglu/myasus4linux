@@ -71,6 +71,11 @@ print_stderr = "warn"
 print_stdout = "warn"
 todo = "warn"
 unimplemented = "warn"
+# A daemon (and a GUI) must unwind/return cleanly, never hard-exit mid-flight.
+exit = "deny"
+# Prefer to_owned() over to_string() on a &str. (string_to_string is covered by
+# pedantic's implicit_clone.)
+str_to_string = "warn"
 # panic-class guardrails: hard-denied on production paths (allowed in tests).
 unwrap_used = "deny"
 expect_used = "deny"
