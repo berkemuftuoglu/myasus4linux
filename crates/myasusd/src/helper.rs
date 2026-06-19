@@ -117,7 +117,12 @@ async fn apply(
     // stall the async D-Bus executor. The outer map_err handles a panicked
     // worker; the inner one handles the write itself failing.
     tokio::task::spawn_blocking(move || -> std::io::Result<()> {
-        std::fs::write(path, value.to_string())?;
+        // Skip the EC write when the value is already programmed -- rewriting the
+        // same value churns the embedded controller for nothing. A failed or
+        // absent read just falls through to writing.
+        if read_sysfs_u8(path) != Some(value) {
+            std::fs::write(path, value.to_string())?;
+        }
         if persist {
             persist_charge_threshold(value);
         }
@@ -156,6 +161,12 @@ fn write_state(path: &Path, value: u8) -> std::io::Result<()> {
     std::fs::rename(&tmp, path)
 }
 
+/// Read a small unsigned value from a sysfs attribute, `None` if missing or
+/// unparseable. Used to skip rewriting a value the EC already holds.
+fn read_sysfs_u8(path: &str) -> Option<u8> {
+    std::fs::read_to_string(path).ok()?.trim().parse().ok()
+}
+
 /// Parse and range-check persisted state. None for malformed or out-of-range
 /// contents. Pure, so it is unit-tested directly.
 fn parse_persisted(raw: &str) -> Option<u8> {
@@ -175,6 +186,10 @@ pub fn restore_charge_threshold() {
         return;
     };
     let op = Op::ChargeThreshold(value);
+    if read_sysfs_u8(op.path()) == Some(value) {
+        tracing::info!("charge threshold already {value} on startup, nothing to restore");
+        return;
+    }
     match std::fs::write(op.path(), op.raw_value().to_string()) {
         Ok(()) => tracing::info!("restored charge threshold {value} on startup"),
         Err(e) => tracing::warn!("could not restore charge threshold: {e}"),
