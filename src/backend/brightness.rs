@@ -40,7 +40,10 @@ pub fn set_percent(percent: u8) -> Result<(), BackendError> {
     let Some(path) = dir.join("brightness").to_str().map(ToOwned::to_owned) else {
         return Ok(());
     };
-    sysfs::write(&path, &value).or_else(|_| sysfs::write_privileged(&path, &value))
+    // The screen backlight is made writable for the active session by a logind
+    // uaccess udev rule (data/99-myasus4linux-backlight.rules), the same way
+    // GNOME dims the screen. No privilege escalation needed.
+    sysfs::write(&path, &value)
 }
 
 fn to_percent(cur: u32, max: u32) -> u8 {
