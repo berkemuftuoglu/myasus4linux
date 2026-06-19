@@ -10,7 +10,7 @@ use gtk::prelude::*;
 
 use super::draw;
 use super::panel::Panel;
-use crate::palette::Rgb;
+use crate::ui::palette::Rgb;
 
 const SPARK_CAP: usize = 60;
 

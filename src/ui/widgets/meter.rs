@@ -9,7 +9,7 @@ use std::rc::Rc;
 use gtk::prelude::*;
 
 use super::draw;
-use crate::palette;
+use crate::ui::palette;
 
 pub struct Meter {
     pub root: gtk::Box,

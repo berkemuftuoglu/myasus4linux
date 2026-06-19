@@ -9,7 +9,7 @@ use std::rc::Rc;
 use gtk::prelude::*;
 
 use super::draw;
-use crate::palette::Rgb;
+use crate::ui::palette::Rgb;
 
 const CAP: usize = 120;
 

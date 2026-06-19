@@ -1,6 +1,7 @@
 pub mod app;
 pub mod builders;
 pub mod pages;
+pub mod palette;
 pub mod widgets;
 
 /// Shared dashboard refresh cadence in seconds. Every live page reads this one

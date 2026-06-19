@@ -3,7 +3,7 @@ use relm4::prelude::*;
 
 use crate::ui::widgets::ledbar::LedBar;
 use crate::backend::{brightness, error::BackendError, keyboard};
-use crate::palette;
+use crate::ui::palette;
 
 pub struct KeyboardPage {
     brightness: u8,

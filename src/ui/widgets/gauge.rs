@@ -8,7 +8,7 @@ use std::rc::Rc;
 use gtk::prelude::*;
 
 use super::draw;
-use crate::palette::{self, Rgb};
+use crate::ui::palette::{self, Rgb};
 
 /// How the value arc is coloured.
 #[derive(Clone, Copy)]

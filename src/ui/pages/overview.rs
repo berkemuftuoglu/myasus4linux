@@ -17,7 +17,7 @@ use crate::backend::{
     safeguards, thermal,
 };
 use crate::format::duration_hm;
-use crate::palette::{self, Rgb};
+use crate::ui::palette::{self, Rgb};
 
 #[expect(
     clippy::struct_excessive_bools,

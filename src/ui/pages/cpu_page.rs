@@ -10,7 +10,7 @@ use crate::backend::{
     cpu::{CoreStat, CpuMonitor},
     fan,
 };
-use crate::palette::{self, Rgb};
+use crate::ui::palette::{self, Rgb};
 
 pub struct CpuPage {
     // The monitor lives behind an Option so it can be handed to the worker

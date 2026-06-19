@@ -7,7 +7,7 @@ use crate::ui::widgets::panel::Panel;
 use crate::ui::widgets::stat::Stat;
 use crate::backend::{battery, error::BackendError};
 use crate::format::duration_hm;
-use crate::palette::Rgb;
+use crate::ui::palette::Rgb;
 
 pub struct BatteryPage {
     charge_threshold: u8,

@@ -3,7 +3,7 @@
 
 use std::f64::consts::PI;
 
-use crate::palette::Rgb;
+use crate::ui::palette::Rgb;
 
 /// Set the Cairo source to a palette colour at the given alpha.
 pub fn set_source(cr: &gtk::cairo::Context, color: Rgb, alpha: f64) {
