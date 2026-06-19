@@ -45,6 +45,7 @@ pub struct FanSample {
 #[derive(Debug)]
 pub enum FanOutput {
     Error(String),
+    Notice(String),
 }
 
 #[relm4::component(pub)]
@@ -248,6 +249,11 @@ impl SimpleComponent for FanPage {
                 if let Err(e) = result {
                     self.current_profile = prev;
                     let _ = sender.output(FanOutput::Error(e.to_string()));
+                } else {
+                    let _ = sender.output(FanOutput::Notice(format!(
+                        "{} mode applied",
+                        self.current_profile.label()
+                    )));
                 }
             }
             FanInput::ReadError(msg) => {

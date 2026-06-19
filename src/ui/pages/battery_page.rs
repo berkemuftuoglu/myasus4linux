@@ -41,6 +41,7 @@ pub enum BatteryInput {
 #[derive(Debug)]
 pub enum BatteryOutput {
     Error(String),
+    Notice(String),
 }
 
 impl BatteryPage {
@@ -337,6 +338,11 @@ impl SimpleComponent for BatteryPage {
                     self.committed = prev;
                     self.charge_threshold = prev;
                     let _ = sender.output(BatteryOutput::Error(e.to_string()));
+                } else {
+                    let _ = sender.output(BatteryOutput::Notice(format!(
+                        "Charge limit set to {}%",
+                        self.committed
+                    )));
                 }
             }
             BatteryInput::ReadError(msg) => {

@@ -25,7 +25,10 @@ pub struct App {
 
 #[derive(Debug)]
 pub enum AppInput {
+    /// A warning or failure (logged at warn).
     ShowToast(String),
+    /// A confirmation that an action succeeded (logged at info).
+    Notify(String),
 }
 
 #[relm4::component(pub)]
@@ -102,6 +105,7 @@ impl SimpleComponent for App {
                 .launch(features.charge_limit)
                 .forward(sender.input_sender(), |msg| match msg {
                     super::pages::battery_page::BatteryOutput::Error(e) => AppInput::ShowToast(e),
+                    super::pages::battery_page::BatteryOutput::Notice(e) => AppInput::Notify(e),
                 })
         });
 
@@ -110,6 +114,7 @@ impl SimpleComponent for App {
                 .launch(())
                 .forward(sender.input_sender(), |msg| match msg {
                     super::pages::fan_page::FanOutput::Error(e) => AppInput::ShowToast(e),
+                    super::pages::fan_page::FanOutput::Notice(e) => AppInput::Notify(e),
                 })
         });
 
@@ -118,6 +123,7 @@ impl SimpleComponent for App {
                 .launch(())
                 .forward(sender.input_sender(), |msg| match msg {
                     super::pages::keyboard_page::KeyboardOutput::Error(e) => AppInput::ShowToast(e),
+                    super::pages::keyboard_page::KeyboardOutput::Notice(e) => AppInput::Notify(e),
                 })
         });
 
@@ -188,6 +194,10 @@ impl SimpleComponent for App {
         match msg {
             AppInput::ShowToast(text) => {
                 tracing::warn!("{text}");
+                self.toaster.add_toast(adw::Toast::new(&text));
+            }
+            AppInput::Notify(text) => {
+                tracing::info!("{text}");
                 self.toaster.add_toast(adw::Toast::new(&text));
             }
         }

@@ -35,6 +35,7 @@ pub enum KeyboardInput {
 #[derive(Debug)]
 pub enum KeyboardOutput {
     Error(String),
+    Notice(String),
 }
 
 #[relm4::component(pub)]
@@ -245,6 +246,11 @@ impl SimpleComponent for KeyboardPage {
                     self.level
                         .set(f64::from(prev) / 3.0, keyboard::brightness_label(prev));
                     let _ = sender.output(KeyboardOutput::Error(e.to_string()));
+                } else {
+                    let _ = sender.output(KeyboardOutput::Notice(format!(
+                        "Keyboard backlight: {}",
+                        keyboard::brightness_label(self.brightness)
+                    )));
                 }
             }
             KeyboardInput::ScreenMoved(val) => {

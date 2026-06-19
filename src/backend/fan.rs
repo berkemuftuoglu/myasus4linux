@@ -27,6 +27,14 @@ impl FanProfile {
     pub fn as_raw(self) -> u8 {
         self as u8
     }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Balanced => "Balanced",
+            Self::Performance => "Performance",
+            Self::Quiet => "Quiet",
+        }
+    }
 }
 
 pub fn read_profile() -> Result<FanProfile, BackendError> {
