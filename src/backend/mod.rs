@@ -1,4 +1,5 @@
 pub mod battery;
+pub mod cpu;
 pub mod detect;
 pub mod error;
 pub mod fan;

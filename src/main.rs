@@ -1,5 +1,13 @@
-// Panics are fine in tests; the panic-class lints only guard production paths.
-#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
+// Panics and indexing are fine in tests; the panic-class lints only guard production paths.
+#![cfg_attr(
+    test,
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing
+    )
+)]
 
 mod backend;
 mod config;
