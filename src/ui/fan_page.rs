@@ -1,37 +1,28 @@
-use std::cell::{Cell, RefCell};
-use std::f64::consts::PI;
-use std::rc::Rc;
-
 use adw::prelude::*;
 use relm4::prelude::*;
 
+use super::gauge::{Accent, Gauge};
+use super::meter::Meter;
+use super::panel::Panel;
+use super::stat::Stat;
 use crate::backend::{
-    cpu::CpuMonitor,
     error::BackendError,
-    fan::{self, FanProfile, FanReading},
+    fan::{self, FanProfile},
+    thermal,
 };
 
 pub struct FanPage {
     current_profile: FanProfile,
-    cpu_temp: Option<f64>,
-    fans: Vec<FanReading>,
-    monitor: CpuMonitor,
-    gauges: Vec<CoreGauge>,
-}
-
-/// A single neon radial gauge. `target` is the real load; `shown` eases toward it
-/// each frame so the arc animates smoothly instead of jumping.
-struct CoreGauge {
-    area: gtk::DrawingArea,
-    target: Rc<Cell<f64>>,
-    freq: Rc<RefCell<String>>,
+    temp_g: Gauge,
+    fan_stats: Vec<(String, Stat)>,
+    zone_meters: Vec<(String, Meter)>,
 }
 
 #[derive(Debug)]
 pub enum FanInput {
     Tick,
-    Loaded(FanProfile, Option<f64>, Vec<FanReading>),
-    SetProfile(u32),
+    Loaded(FanProfile, Option<f64>, Vec<fan::FanReading>),
+    SetProfile(u8),
     ProfileWritten(Result<(), BackendError>),
     ReadError(String),
 }
@@ -41,19 +32,6 @@ pub enum FanOutput {
     Error(String),
 }
 
-impl FanPage {
-    fn fan_summary(&self) -> String {
-        if self.fans.is_empty() {
-            return "No fan sensor reported by this model".to_owned();
-        }
-        self.fans
-            .iter()
-            .map(|f| format!("{}: {} RPM", f.label, f.rpm))
-            .collect::<Vec<_>>()
-            .join("    ")
-    }
-}
-
 #[relm4::component(pub)]
 impl SimpleComponent for FanPage {
     type Init = ();
@@ -61,57 +39,95 @@ impl SimpleComponent for FanPage {
     type Output = FanOutput;
 
     view! {
-        adw::PreferencesPage {
-            set_title: "Fan",
-            set_icon_name: Some("preferences-system-power-symbolic"),
+        gtk::ScrolledWindow {
+            set_hscrollbar_policy: gtk::PolicyType::Never,
 
-            adw::PreferencesGroup {
-                set_title: "Thermal Profile",
-                set_description: Some(
-                    "Controls fan speed and power limits. \
-                     Performance mode allows higher TDP but louder fans.",
-                ),
+            gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                set_spacing: 16,
+                set_margin_top: 22,
+                set_margin_bottom: 22,
+                set_margin_start: 22,
+                set_margin_end: 22,
 
-                adw::ComboRow {
-                    set_title: "Profile",
-                    set_subtitle: "Select fan and power profile",
-                    set_model: Some(&gtk::StringList::new(&["Balanced", "Performance", "Quiet"])),
-                    #[watch]
-                    set_selected: model.current_profile as u32,
-                    connect_selected_notify[sender] => move |row| {
-                        sender.input(FanInput::SetProfile(row.selected()));
+                gtk::Label {
+                    set_halign: gtk::Align::Start,
+                    set_label: "Cooling",
+                    add_css_class: "title-1",
+                },
+
+                gtk::Box {
+                    add_css_class: "panel",
+                    set_orientation: gtk::Orientation::Vertical,
+
+                    gtk::Box {
+                        add_css_class: "panel-header",
+                        gtk::Label {
+                            set_label: "Thermal Profile",
+                            add_css_class: "panel-title",
+                            set_halign: gtk::Align::Start,
+                            set_hexpand: true,
+                        },
+                    },
+
+                    gtk::Box {
+                        add_css_class: "panel-body",
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_spacing: 6,
+
+                        gtk::Box {
+                            set_homogeneous: true,
+                            add_css_class: "linked",
+
+                            #[name = "mode_quiet"]
+                            gtk::ToggleButton {
+                                set_label: "Quiet",
+                                #[watch]
+                                set_active: model.current_profile == FanProfile::Quiet,
+                                connect_clicked[sender] => move |b| if b.is_active() {
+                                    sender.input(FanInput::SetProfile(FanProfile::Quiet as u8));
+                                },
+                            },
+                            #[name = "mode_balanced"]
+                            gtk::ToggleButton {
+                                set_label: "Balanced",
+                                #[watch]
+                                set_active: model.current_profile == FanProfile::Balanced,
+                                connect_clicked[sender] => move |b| if b.is_active() {
+                                    sender.input(FanInput::SetProfile(FanProfile::Balanced as u8));
+                                },
+                            },
+                            #[name = "mode_perf"]
+                            gtk::ToggleButton {
+                                set_label: "Performance",
+                                #[watch]
+                                set_active: model.current_profile == FanProfile::Performance,
+                                connect_clicked[sender] => move |b| if b.is_active() {
+                                    sender.input(FanInput::SetProfile(FanProfile::Performance as u8));
+                                },
+                            },
+                        },
+
+                        gtk::Label {
+                            set_halign: gtk::Align::Start,
+                            add_css_class: "dim-label",
+                            set_label: "Performance raises the power limit and fan speed. Quiet does the opposite.",
+                        },
                     },
                 },
 
-                adw::ActionRow {
-                    set_title: "CPU Temperature",
-                    add_prefix = &gtk::Image { set_icon_name: Some("temperature-symbolic") },
-                    #[watch]
-                    set_subtitle: &model.cpu_temp
-                        .map_or("Unknown".to_owned(), |t| format!("{t:.0} °C")),
-                },
-
-                adw::ActionRow {
-                    set_title: "Fan Speed",
-                    add_prefix = &gtk::Image { set_icon_name: Some("preferences-system-power-symbolic") },
-                    #[watch]
-                    set_subtitle: &model.fan_summary(),
-                },
-            },
-
-            adw::PreferencesGroup {
-                set_title: "CPU Cores",
-                set_description: Some("Live per-thread frequency and load."),
-
-                #[name = "cores"]
+                #[name = "heroes"]
                 gtk::FlowBox {
                     set_selection_mode: gtk::SelectionMode::None,
                     set_homogeneous: true,
-                    set_row_spacing: 12,
-                    set_column_spacing: 12,
-                    set_min_children_per_line: 2,
-                    set_max_children_per_line: 4,
+                    set_column_spacing: 14,
+                    set_row_spacing: 14,
+                    set_min_children_per_line: 1,
+                    set_max_children_per_line: 3,
                 },
+
+                #[name = "sensors_slot"]
+                gtk::Box {},
             },
         }
     }
@@ -123,23 +139,49 @@ impl SimpleComponent for FanPage {
     ) -> ComponentParts<Self> {
         let mut model = FanPage {
             current_profile: FanProfile::Balanced,
-            cpu_temp: None,
-            fans: Vec::new(),
-            monitor: CpuMonitor::new(),
-            gauges: Vec::new(),
+            temp_g: Gauge::new(150, Accent::ByValue),
+            fan_stats: Vec::new(),
+            zone_meters: Vec::new(),
         };
 
         let widgets = view_output!();
 
-        for core in model.monitor.sample() {
-            let gauge = CoreGauge::new(core.id);
-            widgets.cores.insert(&gauge.area, -1);
-            model.gauges.push(gauge);
+        widgets.mode_balanced.set_group(Some(&widgets.mode_quiet));
+        widgets.mode_perf.set_group(Some(&widgets.mode_quiet));
+
+        widgets.heroes.insert(
+            &Panel::metric("CPU Temperature", &model.temp_g.area, 240, true),
+            -1,
+        );
+
+        for f in fan::read_fans() {
+            let stat = Stat::new(&f.label);
+            stat.root.set_size_request(200, -1);
+            widgets.heroes.insert(&stat.root, -1);
+            model.fan_stats.push((f.label, stat));
         }
+        if model.fan_stats.is_empty() {
+            let stat = Stat::new("Fan Speed");
+            stat.set("n/a", "no tachometer on this model");
+            stat.root.set_size_request(200, -1);
+            widgets.heroes.insert(&stat.root, -1);
+        }
+
+        let sensors = Panel::new("Thermal Sensors");
+        sensors.body.set_orientation(gtk::Orientation::Vertical);
+        sensors.body.set_spacing(8);
+        let mut zones = thermal::read_zones();
+        zones.sort_by(|a, b| a.label.cmp(&b.label));
+        for zone in zones {
+            let meter = Meter::new(&zone.label);
+            sensors.body.append(&meter.root);
+            model.zone_meters.push((zone.label, meter));
+        }
+        widgets.sensors_slot.append(&sensors.root);
 
         sender.input(FanInput::Tick);
         let ticker = sender.clone();
-        glib::timeout_add_seconds_local(1, move || {
+        glib::timeout_add_seconds_local(2, move || {
             ticker.input(FanInput::Tick);
             glib::ControlFlow::Continue
         });
@@ -150,10 +192,10 @@ impl SimpleComponent for FanPage {
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
         match msg {
             FanInput::Tick => {
-                for core in self.monitor.sample() {
-                    if let Some(g) = self.gauges.get(core.id) {
-                        g.target.set(core.load);
-                        *g.freq.borrow_mut() = format_mhz(core.mhz);
+                let zones = thermal::read_zones();
+                for (label, meter) in &self.zone_meters {
+                    if let Some(zone) = zones.iter().find(|z| &z.label == label) {
+                        meter.set(zone.celsius / 100.0, &format!("{:.0}°C", zone.celsius));
                     }
                 }
                 let input_sender = sender.input_sender().clone();
@@ -169,11 +211,18 @@ impl SimpleComponent for FanPage {
             }
             FanInput::Loaded(profile, temp, fans) => {
                 self.current_profile = profile;
-                self.cpu_temp = temp;
-                self.fans = fans;
+                if let Some(t) = temp {
+                    self.temp_g
+                        .set(t / 100.0, &format!("{t:.0}°"), "CPU package");
+                }
+                for (label, stat) in &self.fan_stats {
+                    if let Some(reading) = fans.iter().find(|f| &f.label == label) {
+                        stat.set(&reading.rpm.to_string(), "RPM");
+                    }
+                }
             }
-            FanInput::SetProfile(index) => {
-                if let Ok(profile) = FanProfile::from_raw(index as u8) {
+            FanInput::SetProfile(raw) => {
+                if let Ok(profile) = FanProfile::from_raw(raw) {
                     self.current_profile = profile;
                     let input_sender = sender.input_sender().clone();
                     std::thread::spawn(move || {
@@ -191,130 +240,5 @@ impl SimpleComponent for FanPage {
                 let _ = sender.output(FanOutput::Error(msg));
             }
         }
-    }
-}
-
-impl CoreGauge {
-    fn new(id: usize) -> Self {
-        let area = gtk::DrawingArea::new();
-        area.set_content_width(132);
-        area.set_content_height(132);
-
-        let target = Rc::new(Cell::new(0.0));
-        let shown = Rc::new(Cell::new(0.0));
-        let freq = Rc::new(RefCell::new("—".to_owned()));
-
-        let (d_shown, d_freq) = (Rc::clone(&shown), Rc::clone(&freq));
-        area.set_draw_func(move |_, cr, w, h| {
-            draw_gauge(cr, w, h, id, d_shown.get(), &d_freq.borrow());
-        });
-
-        // Ease the shown value toward the target every frame for a smooth sweep.
-        let (a_target, a_shown) = (Rc::clone(&target), Rc::clone(&shown));
-        area.add_tick_callback(move |area, _clock| {
-            let (t, s) = (a_target.get(), a_shown.get());
-            if (t - s).abs() > 0.1 {
-                a_shown.set(s + (t - s) * 0.18);
-                area.queue_draw();
-            }
-            glib::ControlFlow::Continue
-        });
-
-        Self { area, target, freq }
-    }
-}
-
-fn format_mhz(mhz: u32) -> String {
-    if mhz == 0 {
-        "—".to_owned()
-    } else {
-        format!("{:.1}", f64::from(mhz) / 1000.0)
-    }
-}
-
-/// Neon green (idle) through amber to red (pegged).
-fn load_color(load: f64) -> (f64, f64, f64) {
-    let t = (load / 100.0).clamp(0.0, 1.0);
-    if t < 0.5 {
-        lerp((0.27, 0.84, 0.17), (1.0, 0.72, 0.0), t / 0.5)
-    } else {
-        lerp((1.0, 0.72, 0.0), (1.0, 0.25, 0.25), (t - 0.5) / 0.5)
-    }
-}
-
-fn lerp(a: (f64, f64, f64), b: (f64, f64, f64), k: f64) -> (f64, f64, f64) {
-    (
-        a.0 + (b.0 - a.0) * k,
-        a.1 + (b.1 - a.1) * k,
-        a.2 + (b.2 - a.2) * k,
-    )
-}
-
-fn draw_gauge(cr: &gtk::cairo::Context, width: i32, height: i32, id: usize, load: f64, freq: &str) {
-    let width = f64::from(width);
-    let height = f64::from(height);
-    let cx = width / 2.0;
-    let cy = height / 2.0;
-    let radius = width.min(height) / 2.0 - 14.0;
-    let start = 0.75 * PI;
-    let span = 1.5 * PI;
-    let frac = (load / 100.0).clamp(0.0, 1.0);
-    let (red, green, blue) = load_color(load);
-
-    cr.set_line_cap(gtk::cairo::LineCap::Round);
-
-    // background track
-    cr.set_line_width(10.0);
-    cr.set_source_rgba(1.0, 1.0, 1.0, 0.08);
-    cr.arc(cx, cy, radius, start, start + span);
-    let _ = cr.stroke();
-
-    if frac > 0.0 {
-        // outer glow
-        cr.set_line_width(20.0);
-        cr.set_source_rgba(red, green, blue, 0.16);
-        cr.arc(cx, cy, radius, start, start + span * frac);
-        let _ = cr.stroke();
-        // core arc
-        cr.set_line_width(10.0);
-        cr.set_source_rgba(red, green, blue, 1.0);
-        cr.arc(cx, cy, radius, start, start + span * frac);
-        let _ = cr.stroke();
-    }
-
-    // centre: frequency in GHz
-    cr.set_source_rgba(1.0, 1.0, 1.0, 0.96);
-    cr.select_font_face(
-        "Sans",
-        gtk::cairo::FontSlant::Normal,
-        gtk::cairo::FontWeight::Bold,
-    );
-    cr.set_font_size(26.0);
-    center_text(cr, freq, cx, cy + 2.0);
-
-    cr.set_source_rgba(1.0, 1.0, 1.0, 0.5);
-    cr.set_font_size(10.0);
-    center_text(cr, "GHz", cx, cy + 18.0);
-
-    // bottom label: core + load%
-    cr.set_source_rgba(red, green, blue, 0.9);
-    cr.select_font_face(
-        "Sans",
-        gtk::cairo::FontSlant::Normal,
-        gtk::cairo::FontWeight::Normal,
-    );
-    cr.set_font_size(11.0);
-    center_text(
-        cr,
-        &format!("Core {id}  ·  {load:.0}%"),
-        cx,
-        cy + radius - 2.0,
-    );
-}
-
-fn center_text(cr: &gtk::cairo::Context, text: &str, cx: f64, y: f64) {
-    if let Ok(ext) = cr.text_extents(text) {
-        cr.move_to(cx - ext.width() / 2.0 - ext.x_bearing(), y);
-        let _ = cr.show_text(text);
     }
 }

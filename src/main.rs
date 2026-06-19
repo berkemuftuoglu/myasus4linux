@@ -11,6 +11,9 @@
 
 mod backend;
 mod config;
+mod format;
+mod num;
+mod palette;
 mod ui;
 
 use relm4::RelmApp;
