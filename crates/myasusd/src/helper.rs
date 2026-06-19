@@ -28,6 +28,8 @@ enum HelperError {
     },
     #[error("no battery with a charge-threshold control was found")]
     NoBattery,
+    #[error("no supported performance-profile interface was found")]
+    NoFanControl,
     #[error("authorization check failed: {0}")]
     Polkit(#[from] zbus::Error),
     #[error("could not identify caller: {0}")]
@@ -41,6 +43,7 @@ impl From<HelperError> for zbus::fdo::Error {
             HelperError::Validate(_) => zbus::fdo::Error::InvalidArgs(e.to_string()),
             HelperError::Write { .. }
             | HelperError::NoBattery
+            | HelperError::NoFanControl
             | HelperError::Polkit(_)
             | HelperError::Subject(_) => zbus::fdo::Error::Failed(e.to_string()),
         }
@@ -100,11 +103,11 @@ async fn apply(
 ) -> Result<(), HelperError> {
     authorize(connection, header, action_id).await?;
     op.validate()?;
-    let target = resolve_target(op)?;
+    let (target, payload) = resolve_write(op)?;
     // Defence in depth: the path is never caller-supplied (fixed per Op, or built
-    // from the kernel's own power-supply enumeration), but a privileged writer
-    // must still refuse anything that is not an absolute /sys attribute, so a bug
-    // can't turn into an arbitrary write.
+    // from the kernel's own enumeration), but a privileged writer must still
+    // refuse anything that is not an absolute /sys attribute, so a bug can't turn
+    // into an arbitrary write.
     if !target.is_absolute() || !target.starts_with("/sys/") {
         return Err(HelperError::Write {
             path: target.display().to_string(),
@@ -120,12 +123,15 @@ async fn apply(
     // stall the async D-Bus executor. The outer map_err handles a panicked
     // worker; the inner one handles the write itself failing.
     let write_path = target.clone();
+    let to_write = payload.clone();
     tokio::task::spawn_blocking(move || -> std::io::Result<()> {
-        // Skip the EC write when the value is already programmed -- rewriting the
-        // same value churns the embedded controller for nothing. A failed or
-        // absent read just falls through to writing.
-        if read_sysfs_u8(&write_path) != Some(value) {
-            std::fs::write(&write_path, value.to_string())?;
+        // Skip when the attribute already holds this exact value (int or string),
+        // so we don't churn the EC rewriting an unchanged setting.
+        let already = std::fs::read_to_string(&write_path)
+            .ok()
+            .is_some_and(|s| s.trim() == to_write);
+        if !already {
+            std::fs::write(&write_path, &to_write)?;
         }
         if persist {
             persist_charge_threshold(value);
@@ -141,19 +147,46 @@ async fn apply(
         path: target.display().to_string(),
         source,
     })?;
-    tracing::info!("wrote {value} to {}", target.display());
+    tracing::info!("wrote {payload} to {}", target.display());
     Ok(())
 }
 
-/// The sysfs attribute an `Op` writes. Fixed for fan/keyboard; for the charge
-/// threshold the battery is enumerated (not always BAT0), resolved from the
-/// kernel's power-supply tree here -- the value never carries a path.
-fn resolve_target(op: Op) -> Result<PathBuf, HelperError> {
-    match op.fixed_path() {
-        Some(p) => Ok(PathBuf::from(p)),
-        None => myasus_core::charge_threshold_path(Path::new(myasus_core::POWER_SUPPLY_ROOT))
-            .ok_or(HelperError::NoBattery),
+/// The sysfs attribute an `Op` writes and the exact bytes to write. Fixed for
+/// keyboard; the charge threshold resolves the enumerated battery; the fan
+/// profile chooses the live interface (ASUS WMI int, else firmware
+/// `platform_profile` string). The value never carries a path.
+fn resolve_write(op: Op) -> Result<(PathBuf, String), HelperError> {
+    match op {
+        Op::ChargeThreshold(v) => {
+            let p = myasus_core::charge_threshold_path(Path::new(myasus_core::POWER_SUPPLY_ROOT))
+                .ok_or(HelperError::NoBattery)?;
+            Ok((p, v.to_string()))
+        }
+        Op::KeyboardBacklight(v) => {
+            Ok((PathBuf::from(myasus_core::KBD_BACKLIGHT_PATH), v.to_string()))
+        }
+        Op::FanProfile(v) => fan_profile_write(v),
     }
+}
+
+/// Prefer the ASUS WMI integer interface; fall back to the kernel-standard
+/// firmware `platform_profile` (string token, validated against the machine's
+/// advertised choices).
+fn fan_profile_write(value: u8) -> Result<(PathBuf, String), HelperError> {
+    if Path::new(myasus_core::FAN_PROFILE_PATH).exists() {
+        return Ok((PathBuf::from(myasus_core::FAN_PROFILE_PATH), value.to_string()));
+    }
+    let token = myasus_core::platform_profile_token(value).ok_or(HelperError::NoFanControl)?;
+    if Path::new(myasus_core::PLATFORM_PROFILE_PATH).exists() && platform_profile_supports(token) {
+        Ok((PathBuf::from(myasus_core::PLATFORM_PROFILE_PATH), token.to_owned()))
+    } else {
+        Err(HelperError::NoFanControl)
+    }
+}
+
+fn platform_profile_supports(token: &str) -> bool {
+    std::fs::read_to_string(myasus_core::PLATFORM_PROFILE_CHOICES_PATH)
+        .is_ok_and(|s| s.split_whitespace().any(|c| c == token))
 }
 
 /// Record the charge limit for [`restore_charge_threshold`]. Best-effort: a

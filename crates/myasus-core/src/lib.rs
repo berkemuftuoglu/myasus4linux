@@ -27,6 +27,11 @@ pub const POWER_SUPPLY_ROOT: &str = "/sys/class/power_supply";
 /// The charge-limit control, relative to the resolved battery directory.
 pub const CHARGE_THRESHOLD_ATTR: &str = "charge_control_end_threshold";
 pub const FAN_PROFILE_PATH: &str = "/sys/devices/platform/asus-nb-wmi/throttle_thermal_policy";
+/// Kernel-standard ACPI performance interface, the fallback when the ASUS WMI
+/// `throttle_thermal_policy` is absent (more non-ROG laptops expose this one).
+pub const PLATFORM_PROFILE_PATH: &str = "/sys/firmware/acpi/platform_profile";
+/// Space-separated tokens this machine's `platform_profile` accepts.
+pub const PLATFORM_PROFILE_CHOICES_PATH: &str = "/sys/firmware/acpi/platform_profile_choices";
 pub const KBD_BACKLIGHT_PATH: &str = "/sys/class/leds/asus::kbd_backlight/brightness";
 
 /// The well-known D-Bus name the privileged helper owns on the system bus, and
@@ -133,6 +138,17 @@ pub fn battery_dir(root: &Path) -> Option<PathBuf> {
 /// Full path to the charge-limit control on the resolved battery, if present.
 pub fn charge_threshold_path(root: &Path) -> Option<PathBuf> {
     Some(battery_dir(root)?.join(CHARGE_THRESHOLD_ATTR))
+}
+
+/// The `platform_profile` token for a canonical fan-profile value (0=balanced,
+/// 1=performance, 2=quiet), or `None` if out of range.
+pub fn platform_profile_token(value: u8) -> Option<&'static str> {
+    match value {
+        0 => Some("balanced"),
+        1 => Some("performance"),
+        2 => Some("quiet"),
+        _ => None,
+    }
 }
 
 fn is_battery(dir: &Path) -> bool {

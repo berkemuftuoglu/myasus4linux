@@ -40,7 +40,8 @@ pub fn detect_features() -> HardwareFeatures {
         charge_limit: battery_dir
             .as_ref()
             .is_some_and(|d| d.join(myasus_core::CHARGE_THRESHOLD_ATTR).exists()),
-        fan_profile: sysfs::exists(THROTTLE_THERMAL_POLICY),
+        fan_profile: sysfs::exists(THROTTLE_THERMAL_POLICY)
+            || sysfs::exists(myasus_core::PLATFORM_PROFILE_PATH),
         keyboard_backlight: sysfs::exists(KBD_BACKLIGHT),
     }
 }

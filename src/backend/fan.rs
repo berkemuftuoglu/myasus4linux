@@ -35,11 +35,30 @@ impl FanProfile {
             Self::Quiet => "Quiet",
         }
     }
+
+    /// Map a `platform_profile` token to a profile. `low-power` collapses into
+    /// `Quiet` (the closest of our three buckets).
+    pub fn from_platform_token(token: &str) -> Result<Self, BackendError> {
+        match token.trim() {
+            "balanced" => Ok(Self::Balanced),
+            "performance" => Ok(Self::Performance),
+            "quiet" | "low-power" => Ok(Self::Quiet),
+            other => Err(BackendError::ParseError {
+                path: myasus_core::PLATFORM_PROFILE_PATH.to_owned(),
+                details: format!("unknown platform_profile {other:?}"),
+            }),
+        }
+    }
 }
 
+/// Read the active profile from the ASUS WMI interface if present, else from the
+/// kernel-standard `platform_profile`.
 pub fn read_profile() -> Result<FanProfile, BackendError> {
-    let raw: u8 = sysfs::read_value(detect::THROTTLE_THERMAL_POLICY)?;
-    FanProfile::from_raw(raw)
+    if sysfs::exists(detect::THROTTLE_THERMAL_POLICY) {
+        let raw: u8 = sysfs::read_value(detect::THROTTLE_THERMAL_POLICY)?;
+        return FanProfile::from_raw(raw);
+    }
+    FanProfile::from_platform_token(&sysfs::read(myasus_core::PLATFORM_PROFILE_PATH)?)
 }
 
 /// Find the CPU thermal zone and return its temp in degrees C.
