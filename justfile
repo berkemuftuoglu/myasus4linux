@@ -20,7 +20,10 @@ deny:
 audit:
     cargo audit
 
-# Coverage (requires cargo-llvm-cov). Enforced at 100% on the core lib in CI
-# once the workspace split lands (Phase 3).
+# Coverage (requires cargo-llvm-cov): pure-logic modules must stay 100%, the
+# I/O-mixed backend is held to a floor, the GTK shell is excluded.
 cov:
-    cargo llvm-cov --summary-only
+    cargo llvm-cov --no-report
+    cargo llvm-cov report --fail-under-lines 100 --ignore-filename-regex 'src/(ui|main\.rs|config\.rs|backend)'
+    cargo llvm-cov report --fail-under-lines 60 --ignore-filename-regex 'src/(ui|main\.rs|config\.rs)'
+    cargo llvm-cov report --summary-only --ignore-filename-regex 'src/(ui|main\.rs|config\.rs)'

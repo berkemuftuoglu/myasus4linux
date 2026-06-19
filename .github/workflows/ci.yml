@@ -69,3 +69,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: bnjbvr/cargo-machete@main
+
+  # Coverage: the pure-logic modules must stay at 100% line coverage; the rest
+  # of the backend (which mixes in sysfs/file/pkexec I/O that can't run on a
+  # runner) is held to a regression floor. The GTK shell is excluded entirely.
+  coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/gtk-deps
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - uses: Swatinem/rust-cache@v2
+      - name: instrument and run tests
+        run: cargo llvm-cov --no-report --locked
+      - name: pure-logic modules must stay 100%
+        run: cargo llvm-cov report --fail-under-lines 100 --ignore-filename-regex 'src/(ui|main\.rs|config\.rs|backend)'
+      - name: backend logic regression floor
+        run: cargo llvm-cov report --fail-under-lines 60 --ignore-filename-regex 'src/(ui|main\.rs|config\.rs)'
+      - name: summary
+        run: cargo llvm-cov report --summary-only --ignore-filename-regex 'src/(ui|main\.rs|config\.rs)'

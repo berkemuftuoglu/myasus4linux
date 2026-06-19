@@ -28,21 +28,30 @@ fn settings_path() -> PathBuf {
 }
 
 pub fn load() -> Settings {
-    let path = settings_path();
-    std::fs::read_to_string(&path)
+    load_from(&settings_path())
+}
+
+pub fn save(settings: &Settings) -> std::io::Result<()> {
+    save_to(&settings_path(), settings)
+}
+
+/// Read settings from a specific file, falling back to defaults when it is
+/// missing or unparseable. Split out from [`load`] so it can be tested without
+/// touching the real config directory.
+fn load_from(path: &std::path::Path) -> Settings {
+    std::fs::read_to_string(path)
         .ok()
         .and_then(|s| toml::from_str(&s).ok())
         .unwrap_or_default()
 }
 
-pub fn save(settings: &Settings) -> std::io::Result<()> {
-    let path = settings_path();
+fn save_to(path: &std::path::Path, settings: &Settings) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     let content = toml::to_string_pretty(settings)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-    std::fs::write(&path, content)
+    std::fs::write(path, content)
 }
 
 const SERVICE_NAME: &str = "myasus4linux-charge-limit.service";
@@ -87,5 +96,63 @@ pub fn install_boot_service() -> Result<(), String> {
         Ok(())
     } else {
         Err("failed to enable service".to_owned())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_threshold_matches_battery_default() {
+        assert_eq!(
+            Settings::default().charge_threshold,
+            battery::THRESHOLD_DEFAULT
+        );
+    }
+
+    #[test]
+    fn save_then_load_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.toml");
+        save_to(
+            &path,
+            &Settings {
+                charge_threshold: 65,
+            },
+        )
+        .unwrap();
+        assert_eq!(load_from(&path).charge_threshold, 65);
+    }
+
+    #[test]
+    fn save_creates_missing_parent_dirs() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nested/deeper/settings.toml");
+        save_to(
+            &path,
+            &Settings {
+                charge_threshold: 90,
+            },
+        )
+        .unwrap();
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn load_missing_file_falls_back_to_default() {
+        let settings = load_from(std::path::Path::new("/nonexistent/settings.toml"));
+        assert_eq!(settings.charge_threshold, battery::THRESHOLD_DEFAULT);
+    }
+
+    #[test]
+    fn load_garbage_falls_back_to_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.toml");
+        std::fs::write(&path, "this is not valid toml :::").unwrap();
+        assert_eq!(
+            load_from(&path).charge_threshold,
+            battery::THRESHOLD_DEFAULT
+        );
     }
 }
