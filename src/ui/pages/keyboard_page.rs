@@ -8,6 +8,8 @@ use crate::ui::palette;
 pub struct KeyboardPage {
     brightness: u8,
     screen: u8,
+    screen_committed: u8,
+    screen_seq: u32,
     screen_available: bool,
     level: LedBar,
 }
@@ -21,7 +23,8 @@ pub enum KeyboardInput {
         result: Result<(), BackendError>,
         prev: u8,
     },
-    SetScreen(u8),
+    ScreenMoved(u8),
+    CommitScreen(u32),
     ScreenWritten {
         result: Result<(), BackendError>,
         prev: u8,
@@ -163,7 +166,7 @@ impl SimpleComponent for KeyboardPage {
                             #[block_signal(screen_changed)]
                             set_value: f64::from(model.screen),
                             connect_value_changed[sender] => move |s| {
-                                sender.input(KeyboardInput::SetScreen(crate::num::round_u8_in(s.value(), 5, 100)));
+                                sender.input(KeyboardInput::ScreenMoved(crate::num::round_u8_in(s.value(), 5, 100)));
                             } @screen_changed,
                         },
                     },
@@ -177,9 +180,12 @@ impl SimpleComponent for KeyboardPage {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
+        let screen = brightness::read_percent().unwrap_or(50);
         let model = KeyboardPage {
             brightness: 0,
-            screen: brightness::read_percent().unwrap_or(50),
+            screen,
+            screen_committed: screen,
+            screen_seq: 0,
             screen_available: brightness::available(),
             level: LedBar::accent("Level", palette::GOOD),
         };
@@ -241,12 +247,31 @@ impl SimpleComponent for KeyboardPage {
                     let _ = sender.output(KeyboardOutput::Error(e.to_string()));
                 }
             }
-            KeyboardInput::SetScreen(val) => {
+            KeyboardInput::ScreenMoved(val) => {
                 if val == self.screen {
                     return;
                 }
-                let prev = self.screen;
+                // Optimistic display now; defer the write until the drag settles
+                // so a drag is one write, not one per step.
                 self.screen = val;
+                self.screen_seq = self.screen_seq.wrapping_add(1);
+                let seq = self.screen_seq;
+                let s = sender.clone();
+                glib::timeout_add_local(std::time::Duration::from_millis(300), move || {
+                    s.input(KeyboardInput::CommitScreen(seq));
+                    glib::ControlFlow::Break
+                });
+            }
+            KeyboardInput::CommitScreen(seq) => {
+                if seq != self.screen_seq {
+                    return;
+                }
+                let val = self.screen;
+                if val == self.screen_committed {
+                    return;
+                }
+                let prev = self.screen_committed;
+                self.screen_committed = val;
                 crate::ui::offload(sender.input_sender(), move || {
                     KeyboardInput::ScreenWritten {
                         result: brightness::set_percent(val),
@@ -256,6 +281,7 @@ impl SimpleComponent for KeyboardPage {
             }
             KeyboardInput::ScreenWritten { result, prev } => {
                 if let Err(e) = result {
+                    self.screen_committed = prev;
                     self.screen = prev;
                     let _ = sender.output(KeyboardOutput::Error(e.to_string()));
                 }

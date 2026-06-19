@@ -11,6 +11,9 @@ use crate::ui::palette::Rgb;
 
 pub struct BatteryPage {
     charge_threshold: u8,
+    committed: u8,
+    commit_pending: bool,
+    commit_seq: u32,
     charging: bool,
     charge_supported: bool,
     charge_cell: BatteryCell,
@@ -26,7 +29,8 @@ pub struct BatteryPage {
 pub enum BatteryInput {
     LoadValues,
     ValuesLoaded(Box<battery::BatteryInfo>),
-    SetChargeThreshold(u8),
+    SliderMoved(u8),
+    CommitThreshold(u32),
     ThresholdWritten {
         result: Result<(), BackendError>,
         prev: u8,
@@ -98,8 +102,13 @@ impl BatteryPage {
             "charge cycles",
         );
 
-        if let Some(threshold) = info.charge_threshold {
-            self.charge_threshold = threshold;
+        // Don't let a 2s poll stomp the value while the user is dragging the
+        // slider or a debounced write is still in flight.
+        if !self.commit_pending {
+            if let Some(threshold) = info.charge_threshold {
+                self.charge_threshold = threshold;
+                self.committed = threshold;
+            }
         }
     }
 }
@@ -195,7 +204,7 @@ impl SimpleComponent for BatteryPage {
                             #[block_signal(limit_changed)]
                             set_value: f64::from(model.charge_threshold),
                             connect_value_changed[sender] => move |s| {
-                                sender.input(BatteryInput::SetChargeThreshold(
+                                sender.input(BatteryInput::SliderMoved(
                                     crate::num::round_u8_in(s.value(), battery::THRESHOLD_MIN, battery::THRESHOLD_MAX),
                                 ));
                             } @limit_changed,
@@ -219,8 +228,12 @@ impl SimpleComponent for BatteryPage {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
+        let initial = battery::charge_threshold().unwrap_or(battery::THRESHOLD_DEFAULT);
         let model = BatteryPage {
-            charge_threshold: battery::charge_threshold().unwrap_or(battery::THRESHOLD_DEFAULT),
+            charge_threshold: initial,
+            committed: initial,
+            commit_pending: false,
+            commit_seq: 0,
             charging: false,
             charge_supported,
             charge_cell: BatteryCell::new(168),
@@ -283,12 +296,34 @@ impl SimpleComponent for BatteryPage {
                 });
             }
             BatteryInput::ValuesLoaded(info) => self.show_values(&info),
-            BatteryInput::SetChargeThreshold(val) => {
+            BatteryInput::SliderMoved(val) => {
                 if val == self.charge_threshold {
                     return;
                 }
-                let prev = self.charge_threshold;
+                // Optimistic display now; defer the privileged write until the
+                // drag settles, so one drag is one authorised write, not ~40.
                 self.charge_threshold = val;
+                self.commit_pending = true;
+                self.commit_seq = self.commit_seq.wrapping_add(1);
+                let seq = self.commit_seq;
+                let s = sender.clone();
+                glib::timeout_add_local(std::time::Duration::from_millis(400), move || {
+                    s.input(BatteryInput::CommitThreshold(seq));
+                    glib::ControlFlow::Break
+                });
+            }
+            BatteryInput::CommitThreshold(seq) => {
+                // Superseded by a newer move: let the latest one commit instead.
+                if seq != self.commit_seq {
+                    return;
+                }
+                let val = self.charge_threshold;
+                if val == self.committed {
+                    self.commit_pending = false;
+                    return;
+                }
+                let prev = self.committed;
+                self.committed = val;
                 crate::ui::offload(sender.input_sender(), move || {
                     BatteryInput::ThresholdWritten {
                         result: battery::set_charge_threshold(val),
@@ -297,7 +332,9 @@ impl SimpleComponent for BatteryPage {
                 });
             }
             BatteryInput::ThresholdWritten { result, prev } => {
+                self.commit_pending = false;
                 if let Err(e) = result {
+                    self.committed = prev;
                     self.charge_threshold = prev;
                     let _ = sender.output(BatteryOutput::Error(e.to_string()));
                 }
