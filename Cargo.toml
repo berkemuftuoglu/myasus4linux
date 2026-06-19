@@ -11,7 +11,7 @@ authors = ["Berk Muftuoglu"]
 workspace = true
 
 [workspace]
-members = ["crates/myasus-core"]
+members = ["crates/myasus-core", "crates/myasusd"]
 
 [dependencies]
 gtk = { version = "0.10", package = "gtk4" }

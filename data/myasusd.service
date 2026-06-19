@@ -1,0 +1,18 @@
+[Unit]
+Description=myasus4linux privileged hardware control daemon
+Documentation=https://github.com/berkmuftuoglu/myasus4linux
+
+[Service]
+Type=dbus
+BusName=io.github.berkmuftuoglu.MyAsus4Linux.Helper
+ExecStart=/usr/local/libexec/myasusd
+# It only ever writes a handful of fixed /sys files; lock everything else down.
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/sys/devices/platform/asus-nb-wmi /sys/class/power_supply /sys/class/leds
+NoNewPrivileges=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+PrivateTmp=yes

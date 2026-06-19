@@ -1,0 +1,5 @@
+[D-BUS Service]
+Name=io.github.berkmuftuoglu.MyAsus4Linux.Helper
+Exec=/usr/local/libexec/myasusd
+User=root
+SystemdService=myasusd.service
