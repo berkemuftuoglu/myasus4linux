@@ -1,0 +1,8 @@
+# typos spell-checker config. Domain abbreviations live in extend-words.
+[files]
+extend-exclude = ["*.svg", "Cargo.lock"]
+
+[default.extend-words]
+# sysfs / hardware jargon that are not typos
+acpitz = "acpitz"
+iwlwifi = "iwlwifi"

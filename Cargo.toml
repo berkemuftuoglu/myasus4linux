@@ -33,9 +33,9 @@ must_use_candidate = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 wildcard_imports = "allow"
-# UI widget/display casts are range-clamped and intentional
-cast_possible_truncation = "allow"
-cast_sign_loss = "allow"
+# precision loss on f64<-small-int (drawing geometry) is harmless; truncation
+# and sign loss are NOT blanket-allowed -- those go through clamp helpers and
+# narrowly-scoped #[allow(reason = ...)] at the call site.
 cast_precision_loss = "allow"
 struct_field_names = "allow"
 assigning_clones = "allow"
@@ -45,12 +45,13 @@ print_stderr = "warn"
 print_stdout = "warn"
 todo = "warn"
 unimplemented = "warn"
-# panic-class guardrails for production paths (allowed in tests, see main.rs)
-unwrap_used = "warn"
-expect_used = "warn"
-unwrap_in_result = "warn"
-panic = "warn"
-indexing_slicing = "warn"
+# panic-class guardrails: hard-denied on production paths (allowed in tests via
+# the cfg(test) block in main.rs).
+unwrap_used = "deny"
+expect_used = "deny"
+unwrap_in_result = "deny"
+panic = "deny"
+indexing_slicing = "deny"
 
 [lints.rust]
 unsafe_code = "deny"
