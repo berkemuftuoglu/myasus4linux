@@ -1,0 +1,6 @@
+# myasus4linux: these controls are safe and range-checked by the kernel, so let
+# the local user set them directly instead of a polkit/password prompt every time.
+# The app still falls back to pkexec when these rules are not installed.
+ACTION=="add", SUBSYSTEM=="leds", KERNEL=="asus::kbd_backlight", RUN+="/bin/chmod 0666 /sys/class/leds/asus::kbd_backlight/brightness"
+ACTION=="add", SUBSYSTEM=="platform", KERNEL=="asus-nb-wmi", RUN+="/bin/chmod 0666 /sys/devices/platform/asus-nb-wmi/throttle_thermal_policy"
+ACTION=="add", SUBSYSTEM=="power_supply", KERNEL=="BAT0", RUN+="/bin/chmod 0666 /sys/class/power_supply/BAT0/charge_control_end_threshold"
