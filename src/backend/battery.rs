@@ -188,7 +188,7 @@ pub fn charge_threshold() -> Option<u8> {
 
 pub fn set_charge_threshold(value: u8) -> Result<(), BackendError> {
     myasus_core::Op::ChargeThreshold(value).validate()?;
-    super::daemon::set_charge_threshold(value)
+    super::ipc::set_charge_threshold(value)
 }
 
 #[cfg(test)]

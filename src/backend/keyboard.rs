@@ -8,7 +8,7 @@ pub fn read_brightness() -> Result<u8, BackendError> {
 
 pub fn set_brightness(value: u8) -> Result<(), BackendError> {
     myasus_core::Op::KeyboardBacklight(value).validate()?;
-    super::daemon::set_keyboard_backlight(value)
+    super::ipc::set_keyboard_backlight(value)
 }
 
 pub fn brightness_label(value: u8) -> &'static str {

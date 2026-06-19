@@ -69,7 +69,7 @@ fn cpu_temp_in(thermal: &std::path::Path) -> Option<f64> {
 }
 
 pub fn set_profile(profile: FanProfile) -> Result<(), BackendError> {
-    super::daemon::set_fan_profile(profile.as_raw())
+    super::ipc::set_fan_profile(profile.as_raw())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
