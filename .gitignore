@@ -34,3 +34,5 @@ CLAUDE.md
 # Local planning, design notes, and review output (not shipped)
 .planning/
 ROAST-REPORT.md
+/buildtest/
+/staging/
