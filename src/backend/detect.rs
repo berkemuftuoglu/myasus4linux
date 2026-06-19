@@ -15,6 +15,9 @@ pub const BAT_CHARGE_FULL: &str = "/sys/class/power_supply/BAT0/charge_full";
 /// Value in microamp-hours.
 pub const BAT_CHARGE_FULL_DESIGN: &str = "/sys/class/power_supply/BAT0/charge_full_design";
 
+/// Charge remaining, in microamp-hours.
+pub const BAT_CHARGE_NOW: &str = "/sys/class/power_supply/BAT0/charge_now";
+
 pub const BAT_CYCLE_COUNT: &str = "/sys/class/power_supply/BAT0/cycle_count";
 pub const BAT_VOLTAGE_NOW: &str = "/sys/class/power_supply/BAT0/voltage_now";
 pub const BAT_CURRENT_NOW: &str = "/sys/class/power_supply/BAT0/current_now";
