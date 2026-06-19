@@ -1,6 +1,5 @@
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 
 use super::error::BackendError;
 
@@ -37,36 +36,6 @@ pub fn write(path: &str, value: &str) -> Result<(), BackendError> {
         path: path.to_owned(),
         source,
     })
-}
-
-/// Write a value to a sysfs file using pkexec for privilege escalation.
-///
-/// This spawns `pkexec tee <path>` and writes the value to its stdin.
-/// The user will be prompted for authentication via polkit.
-pub fn write_privileged(path: &str, value: &str) -> Result<(), BackendError> {
-    let output = Command::new("pkexec")
-        .args(["tee", path])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .and_then(|mut child| {
-            use std::io::Write;
-            if let Some(ref mut stdin) = child.stdin {
-                stdin.write_all(value.as_bytes())?;
-            }
-            child.wait_with_output()
-        })
-        .map_err(BackendError::PrivilegedWrite)?;
-
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(BackendError::PrivilegedWrite(std::io::Error::new(
-            std::io::ErrorKind::PermissionDenied,
-            String::from_utf8_lossy(&output.stderr).into_owned(),
-        )))
-    }
 }
 
 #[cfg(test)]

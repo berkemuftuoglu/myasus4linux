@@ -1,0 +1,7 @@
+# Let the logged-in user adjust the screen backlight without root.
+#
+# This is the freedesktop-standard approach (the same uaccess tag GNOME relies
+# on to dim the display): logind grants the active session write access to the
+# device. It does NOT make the file world-writable and is unrelated to the ASUS
+# fan/charge/keyboard controls -- those go through the myasusd daemon + polkit.
+ACTION=="add", SUBSYSTEM=="backlight", TAG+="uaccess"

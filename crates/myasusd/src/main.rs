@@ -1,0 +1,38 @@
+//! `myasusd` -- the privileged D-Bus system daemon for myasus4linux.
+//!
+//! Runs as root, owns the well-known name on the system bus, and is the only
+//! thing that writes the ASUS hardware controls. The GUI talks to it instead of
+//! escalating with `pkexec` or relying on a world-writable sysfs file. Each
+//! method authorises the caller with polkit, then validates and writes through
+//! the `myasus_core::Op` contract -- callers never supply a path.
+
+mod helper;
+
+use helper::Helper;
+
+const BUS_NAME: &str = "io.github.berkmuftuoglu.MyAsus4Linux.Helper";
+const OBJECT_PATH: &str = "/io/github/berkmuftuoglu/MyAsus4Linux/Helper";
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .init();
+
+    let connection = zbus::connection::Builder::system()?
+        .name(BUS_NAME)?
+        .serve_at(OBJECT_PATH, Helper::new())?
+        .build()
+        .await?;
+
+    tracing::info!("myasusd up, owning {BUS_NAME} at {OBJECT_PATH}");
+
+    // The connection handles messages in the background; keep the process alive.
+    // `connection` is held so it is not dropped.
+    let _ = &connection;
+    std::future::pending::<()>().await;
+    Ok(())
+}

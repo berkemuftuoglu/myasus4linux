@@ -10,9 +10,7 @@ pub fn set_brightness(value: u8) -> Result<(), BackendError> {
     if value > 3 {
         return Err(BackendError::InvalidBrightness(value));
     }
-    // try direct write first, fall back to pkexec
-    sysfs::write(detect::KBD_BACKLIGHT, &value.to_string())
-        .or_else(|_| sysfs::write_privileged(detect::KBD_BACKLIGHT, &value.to_string()))
+    super::daemon::set_keyboard_backlight(value)
 }
 
 pub fn brightness_label(value: u8) -> &'static str {

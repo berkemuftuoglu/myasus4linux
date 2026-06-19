@@ -1,10 +1,15 @@
 use adw::prelude::*;
 use relm4::prelude::*;
 
-use crate::backend::{error::BackendError, keyboard};
+use super::ledbar::LedBar;
+use crate::backend::{brightness, error::BackendError, keyboard};
+use crate::palette;
 
 pub struct KeyboardPage {
     brightness: u8,
+    screen: u8,
+    screen_available: bool,
+    level: LedBar,
 }
 
 #[derive(Debug)]
@@ -13,6 +18,7 @@ pub enum KeyboardInput {
     BrightnessLoaded(u8),
     SetBrightness(u8),
     BrightnessWritten(Result<(), BackendError>),
+    SetScreen(u8),
     ReadError(String),
 }
 
@@ -28,36 +34,132 @@ impl SimpleComponent for KeyboardPage {
     type Output = KeyboardOutput;
 
     view! {
-        adw::PreferencesPage {
-            set_title: "Keyboard",
-            set_icon_name: Some("input-keyboard-symbolic"),
+        gtk::ScrolledWindow {
+            set_hscrollbar_policy: gtk::PolicyType::Never,
 
-            adw::PreferencesGroup {
-                set_title: "Backlight",
-                set_description: Some("Control the keyboard backlight brightness."),
+            gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                set_spacing: 16,
+                set_margin_top: 22,
+                set_margin_bottom: 22,
+                set_margin_start: 22,
+                set_margin_end: 22,
 
-                adw::SpinRow {
-                    set_title: "Brightness",
-                    set_subtitle: "Keyboard backlight level",
-                    #[watch]
-                    set_value: f64::from(model.brightness),
-                    set_adjustment: Some(&gtk::Adjustment::new(
-                        0.0,   // default
-                        0.0,   // min (Off)
-                        3.0,   // max (High)
-                        1.0,   // step
-                        1.0,   // page step
-                        0.0,   // page size
-                    )),
-                    connect_value_notify[sender] => move |row| {
-                        sender.input(KeyboardInput::SetBrightness(row.value() as u8));
+                gtk::Label {
+                    set_halign: gtk::Align::Start,
+                    set_label: "Lighting",
+                    add_css_class: "title-1",
+                },
+
+                gtk::Box {
+                    add_css_class: "panel",
+                    set_orientation: gtk::Orientation::Vertical,
+
+                    gtk::Box {
+                        add_css_class: "panel-header",
+                        gtk::Label {
+                            set_label: "Keyboard Backlight",
+                            add_css_class: "panel-title",
+                            set_halign: gtk::Align::Start,
+                            set_hexpand: true,
+                        },
+                        gtk::Label {
+                            add_css_class: "panel-corner",
+                            #[watch]
+                            set_label: keyboard::brightness_label(model.brightness),
+                        },
+                    },
+
+                    gtk::Box {
+                        add_css_class: "panel-body",
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_spacing: 12,
+
+                        gtk::Box {
+                            set_homogeneous: true,
+                            add_css_class: "linked",
+
+                            #[name = "kbd_off"]
+                            gtk::ToggleButton {
+                                set_label: "Off",
+                                #[watch]
+                                set_active: model.brightness == 0,
+                                connect_clicked[sender] => move |b| if b.is_active() {
+                                    sender.input(KeyboardInput::SetBrightness(0));
+                                },
+                            },
+                            #[name = "kbd_low"]
+                            gtk::ToggleButton {
+                                set_label: "Low",
+                                #[watch]
+                                set_active: model.brightness == 1,
+                                connect_clicked[sender] => move |b| if b.is_active() {
+                                    sender.input(KeyboardInput::SetBrightness(1));
+                                },
+                            },
+                            #[name = "kbd_med"]
+                            gtk::ToggleButton {
+                                set_label: "Medium",
+                                #[watch]
+                                set_active: model.brightness == 2,
+                                connect_clicked[sender] => move |b| if b.is_active() {
+                                    sender.input(KeyboardInput::SetBrightness(2));
+                                },
+                            },
+                            #[name = "kbd_high"]
+                            gtk::ToggleButton {
+                                set_label: "High",
+                                #[watch]
+                                set_active: model.brightness == 3,
+                                connect_clicked[sender] => move |b| if b.is_active() {
+                                    sender.input(KeyboardInput::SetBrightness(3));
+                                },
+                            },
+                        },
+
+                        #[name = "level_slot"]
+                        gtk::Box {},
                     },
                 },
 
-                adw::ActionRow {
-                    set_title: "Level",
-                    #[watch]
-                    set_subtitle: keyboard::brightness_label(model.brightness),
+                gtk::Box {
+                    add_css_class: "panel",
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_visible: model.screen_available,
+
+                    gtk::Box {
+                        add_css_class: "panel-header",
+                        gtk::Label {
+                            set_label: "Display Brightness",
+                            add_css_class: "panel-title",
+                            set_halign: gtk::Align::Start,
+                            set_hexpand: true,
+                        },
+                        gtk::Label {
+                            add_css_class: "panel-corner",
+                            #[watch]
+                            set_label: &format!("{}%", model.screen),
+                        },
+                    },
+
+                    gtk::Box {
+                        add_css_class: "panel-body",
+
+                        #[name = "screen_scale"]
+                        gtk::Scale {
+                            set_orientation: gtk::Orientation::Horizontal,
+                            set_hexpand: true,
+                            set_draw_value: false,
+                            set_round_digits: 0,
+                            set_adjustment: &gtk::Adjustment::new(50.0, 5.0, 100.0, 5.0, 10.0, 0.0),
+                            #[watch]
+                            #[block_signal(screen_changed)]
+                            set_value: f64::from(model.screen),
+                            connect_value_changed[sender] => move |s| {
+                                sender.input(KeyboardInput::SetScreen(crate::num::round_u8(s.value())));
+                            } @screen_changed,
+                        },
+                    },
                 },
             },
         }
@@ -68,9 +170,26 @@ impl SimpleComponent for KeyboardPage {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let model = KeyboardPage { brightness: 0 };
+        let model = KeyboardPage {
+            brightness: 0,
+            screen: brightness::read_percent().unwrap_or(50),
+            screen_available: brightness::available(),
+            level: LedBar::accent("Level", palette::GOOD),
+        };
 
         let widgets = view_output!();
+
+        widgets.kbd_low.set_group(Some(&widgets.kbd_off));
+        widgets.kbd_med.set_group(Some(&widgets.kbd_off));
+        widgets.kbd_high.set_group(Some(&widgets.kbd_off));
+        widgets.level_slot.append(&model.level.root);
+
+        for mark in [25.0, 50.0, 75.0, 100.0] {
+            widgets
+                .screen_scale
+                .add_mark(mark, gtk::PositionType::Bottom, None);
+        }
+
         sender.input(KeyboardInput::LoadBrightness);
         ComponentParts { model, widgets }
     }
@@ -89,9 +208,16 @@ impl SimpleComponent for KeyboardPage {
             }
             KeyboardInput::BrightnessLoaded(val) => {
                 self.brightness = val;
+                self.level
+                    .set(f64::from(val) / 3.0, keyboard::brightness_label(val));
             }
             KeyboardInput::SetBrightness(val) => {
+                if val == self.brightness {
+                    return;
+                }
                 self.brightness = val;
+                self.level
+                    .set(f64::from(val) / 3.0, keyboard::brightness_label(val));
                 let input_sender = sender.input_sender().clone();
                 std::thread::spawn(move || {
                     let _ = input_sender.send(KeyboardInput::BrightnessWritten(
@@ -103,6 +229,18 @@ impl SimpleComponent for KeyboardPage {
                 if let Err(e) = result {
                     let _ = sender.output(KeyboardOutput::Error(e.to_string()));
                 }
+            }
+            KeyboardInput::SetScreen(val) => {
+                if val == self.screen {
+                    return;
+                }
+                self.screen = val;
+                let input_sender = sender.input_sender().clone();
+                std::thread::spawn(move || {
+                    if let Err(e) = brightness::set_percent(val) {
+                        let _ = input_sender.send(KeyboardInput::ReadError(e.to_string()));
+                    }
+                });
             }
             KeyboardInput::ReadError(msg) => {
                 let _ = sender.output(KeyboardOutput::Error(msg));

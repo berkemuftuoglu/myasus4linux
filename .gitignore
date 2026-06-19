@@ -30,3 +30,9 @@ Thumbs.db
 
 # Claude Code project instructions (not shipped)
 CLAUDE.md
+
+# Local planning, design notes, and review output (not shipped)
+.planning/
+ROAST-REPORT.md
+/buildtest/
+/staging/

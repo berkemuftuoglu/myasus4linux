@@ -20,6 +20,7 @@ else
 endif
 
 bindir = get_option('prefix') / get_option('bindir')
+libexecdir = get_option('prefix') / get_option('libexecdir')
 datadir = get_option('prefix') / get_option('datadir')
 pkgdatadir = datadir / meson.project_name()
 

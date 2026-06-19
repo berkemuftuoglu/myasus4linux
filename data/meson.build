@@ -3,11 +3,28 @@ subdir('resources')
 if host_machine.system() == 'linux'
     subdir('icons')
 
-    # udev rule so the safe controls (kbd backlight, fan profile, charge limit)
-    # are user-writable and don't trigger a polkit prompt on every change.
+    # The ASUS fan/charge/keyboard controls are written by the myasusd daemon
+    # over D-Bus, gated by polkit. The screen backlight gets a uaccess rule so
+    # the active session can dim the display without root.
     install_data(
-        '99-myasus4linux.rules',
+        '99-myasus4linux-backlight.rules',
         install_dir: get_option('prefix') / 'lib' / 'udev' / 'rules.d',
+    )
+    install_data(
+        'io.github.berkmuftuoglu.MyAsus4Linux.Helper.conf',
+        install_dir: datadir / 'dbus-1' / 'system.d',
+    )
+    install_data(
+        'io.github.berkmuftuoglu.MyAsus4Linux.Helper.service',
+        install_dir: datadir / 'dbus-1' / 'system-services',
+    )
+    install_data(
+        'myasusd.service',
+        install_dir: get_option('prefix') / 'lib' / 'systemd' / 'system',
+    )
+    install_data(
+        '../polkit/io.github.berkmuftuoglu.MyAsus4Linux.Helper.policy',
+        install_dir: datadir / 'polkit-1' / 'actions',
     )
 
     desktop_conf = configuration_data()

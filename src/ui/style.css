@@ -1,0 +1,185 @@
+/* myasus4linux — Grafana-style observability dashboard.
+   Dense panels with thin header strips, a single neon-green accent, and
+   threshold colour reserved for the data itself. Every screen is panels;
+   no plain settings-list rows survive. */
+
+@define-color accent_color #38ff88;
+@define-color accent_bg_color #15291f;
+@define-color accent_fg_color #d9ffe9;
+@define-color destructive_color #ff5a6a;
+@define-color warning_color #ffc24b;
+@define-color success_color #38ff88;
+
+@define-color window_bg_color #070a0f;
+@define-color window_fg_color #e9f6ff;
+@define-color view_bg_color #070a0f;
+@define-color view_fg_color #e9f6ff;
+@define-color headerbar_bg_color #090d14;
+@define-color headerbar_fg_color #e9f6ff;
+@define-color card_bg_color #0c1119;
+@define-color popover_bg_color #0c1119;
+@define-color dialog_bg_color #0c1119;
+@define-color sidebar_bg_color #080b11;
+
+/* deep backdrop with a faint technical grid, like a console wall */
+window {
+  background-color: #070a0f;
+  background-image:
+    radial-gradient(130% 100% at 50% -15%, rgba(28, 64, 82, 0.30) 0%, rgba(7, 10, 15, 0) 58%),
+    repeating-linear-gradient(0deg, rgba(80, 200, 220, 0.035) 0px, rgba(80, 200, 220, 0.035) 1px, transparent 1px, transparent 36px),
+    repeating-linear-gradient(90deg, rgba(80, 200, 220, 0.035) 0px, rgba(80, 200, 220, 0.035) 1px, transparent 1px, transparent 36px);
+}
+
+headerbar {
+  background: rgba(8, 11, 18, 0.94);
+  box-shadow: inset 0 -1px rgba(56, 255, 136, 0.22);
+}
+
+/* ── Grafana panel: a framed box with a thin header strip ───────────────── */
+.panel {
+  background-color: rgba(12, 17, 25, 0.94);
+  border: 1px solid rgba(70, 120, 110, 0.22);
+  border-radius: 6px;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.5),
+    inset 0 1px rgba(140, 255, 200, 0.04);
+}
+.panel:hover {
+  border-color: rgba(56, 255, 136, 0.30);
+}
+.panel-header {
+  padding: 7px 12px 6px 12px;
+  border-bottom: 1px solid rgba(80, 200, 220, 0.10);
+}
+.panel-title {
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: #7fa8b8;
+}
+.panel-corner {
+  font-family: monospace;
+  font-size: 12px;
+  font-weight: bold;
+  color: #9ff7c6;
+}
+.panel-body {
+  padding: 12px;
+}
+
+/* page heading reads like a dashboard title */
+.title-1 {
+  letter-spacing: 1.5px;
+  text-shadow: 0 0 16px rgba(56, 255, 136, 0.30);
+}
+.section-label {
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: #5f7d8a;
+}
+
+/* sidebar: glowing active row with an accent bar */
+.navigation-sidebar {
+  background: transparent;
+}
+.navigation-sidebar > row {
+  border-radius: 4px;
+  border-left: 2px solid transparent;
+  margin: 2px 8px;
+  color: #b9cdd6;
+}
+.navigation-sidebar > row:selected {
+  background: linear-gradient(90deg, rgba(56, 255, 136, 0.16), rgba(56, 255, 136, 0.02));
+  border-left: 2px solid @accent_color;
+  box-shadow: 0 0 14px rgba(56, 255, 136, 0.16);
+}
+.navigation-sidebar > row:selected label {
+  color: #d6ffe7;
+}
+
+/* segmented mode switch (Quiet / Balanced / Performance) */
+.linked > button,
+.linked > togglebutton {
+  border-radius: 4px;
+  border: 1px solid rgba(80, 200, 220, 0.18);
+  padding: 8px 4px;
+}
+togglebutton:checked {
+  background: rgba(56, 255, 136, 0.16);
+  border-color: @accent_color;
+  color: #e8fff2;
+  box-shadow: inset 0 0 0 1px rgba(56, 255, 136, 0.4), 0 0 14px rgba(56, 255, 136, 0.28);
+}
+
+/* sliders carry the accent */
+scale trough {
+  background: rgba(255, 255, 255, 0.07);
+  min-height: 6px;
+  border-radius: 3px;
+}
+scale highlight {
+  background: @accent_color;
+  border-radius: 3px;
+  box-shadow: 0 0 8px rgba(56, 255, 136, 0.5);
+}
+scale slider {
+  background: #d6ffe7;
+  box-shadow: 0 0 8px rgba(56, 255, 136, 0.6);
+  min-width: 16px;
+  min-height: 16px;
+}
+scale marks > mark > indicator {
+  background: rgba(120, 180, 190, 0.4);
+}
+
+separator {
+  background: rgba(80, 200, 220, 0.12);
+}
+
+.warning { color: @warning_color; }
+.danger  { color: @destructive_color; }
+
+/* live numeric readouts: monospace so digits don't jitter as they update */
+.metric-value {
+  font-family: monospace;
+  font-weight: bold;
+  color: #d6ffe7;
+}
+
+/* big-number readout in stat panels */
+.stat-value {
+  font-family: monospace;
+  font-weight: bold;
+  font-size: 30px;
+  color: #eef6ff;
+}
+.stat-unit {
+  font-family: monospace;
+  font-size: 13px;
+  color: #7fa8b8;
+}
+
+/* two-column spec table (Hardware Configuration), GtkGrid based */
+.spec-head {
+  font-size: 10px;
+  font-weight: bold;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: #5f7d8a;
+  padding: 4px 24px 8px 6px;
+  border-bottom: 1px solid rgba(80, 200, 220, 0.18);
+}
+.spec-key {
+  color: #87aab8;
+  padding: 9px 24px 9px 6px;
+  border-bottom: 1px solid rgba(80, 200, 220, 0.07);
+}
+.spec-value {
+  font-weight: bold;
+  color: #e6f3ff;
+  padding: 9px 6px 9px 6px;
+  border-bottom: 1px solid rgba(80, 200, 220, 0.07);
+}

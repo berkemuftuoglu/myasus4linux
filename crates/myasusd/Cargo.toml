@@ -1,0 +1,23 @@
+[package]
+name = "myasusd"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "GPL-3.0-or-later"
+description = "Privileged D-Bus system daemon for myasus4linux hardware controls"
+
+[[bin]]
+name = "myasusd"
+path = "src/main.rs"
+
+[dependencies]
+myasus-core = { path = "../myasus-core" }
+zbus = "5"
+zbus_polkit = "5"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+
+[lints]
+workspace = true

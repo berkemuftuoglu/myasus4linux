@@ -1,26 +1,116 @@
 use adw::prelude::*;
 use relm4::prelude::*;
 
-use crate::backend::sysfs;
+use super::meter::Meter;
+use super::panel::Panel;
+use super::stat::Stat;
+use super::table::Table;
+use crate::backend::{detect, sysfs};
 
-/// Displays static hardware and OS information gathered at startup from
-/// `/proc`, `/sys`, and standard system files.
+/// Hardware and OS facts. Static identity is shown as a spec table; memory and
+/// uptime update live in panels above it.
 pub struct InfoPage {
-    model_name: String,
-    bios_version: String,
-    vendor: String,
-    cpu_model: String,
-    ram_total: String,
-    kernel_version: String,
-    storage_info: String,
+    mem_meter: Meter,
+    uptime_s: Stat,
 }
 
 #[derive(Debug)]
 pub enum InfoInput {
-    Load,
+    Tick,
 }
 
-/// Read the CPU model name from /proc/cpuinfo.
+#[relm4::component(pub)]
+impl SimpleComponent for InfoPage {
+    type Init = ();
+    type Input = InfoInput;
+    type Output = ();
+
+    view! {
+        gtk::ScrolledWindow {
+            set_hscrollbar_policy: gtk::PolicyType::Never,
+
+            gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                set_spacing: 16,
+                set_margin_top: 22,
+                set_margin_bottom: 22,
+                set_margin_start: 22,
+                set_margin_end: 22,
+
+                gtk::Label {
+                    set_halign: gtk::Align::Start,
+                    set_label: "System",
+                    add_css_class: "title-1",
+                },
+
+                #[name = "live"]
+                gtk::Box { set_homogeneous: true, set_spacing: 14 },
+
+                #[name = "table_slot"]
+                gtk::Box {},
+            },
+        }
+    }
+
+    fn init(
+        _init: Self::Init,
+        root: Self::Root,
+        sender: ComponentSender<Self>,
+    ) -> ComponentParts<Self> {
+        let model = InfoPage {
+            mem_meter: Meter::new("Memory"),
+            uptime_s: Stat::new("Uptime"),
+        };
+
+        let widgets = view_output!();
+
+        let mem_panel = Panel::new("Memory Usage");
+        mem_panel.body.append(&model.mem_meter.root);
+        mem_panel.root.set_hexpand(true);
+        widgets.live.append(&mem_panel.root);
+        widgets.live.append(&model.uptime_s.root);
+
+        let table = Table::new(
+            "Hardware Configuration",
+            &[
+                ("Model", dmi(detect::DMI_PRODUCT_NAME)),
+                ("Vendor", dmi(detect::DMI_BOARD_VENDOR)),
+                ("BIOS Version", dmi(detect::DMI_BIOS_VERSION)),
+                ("Processor", read_cpu_model()),
+                ("Memory", read_ram_total()),
+                ("Kernel", read_kernel_version()),
+                ("Root Filesystem", read_storage_info()),
+            ],
+        );
+        widgets.table_slot.append(&table.root);
+
+        sender.input(InfoInput::Tick);
+        let ticker = sender.clone();
+        glib::timeout_add_seconds_local(2, move || {
+            ticker.input(InfoInput::Tick);
+            glib::ControlFlow::Continue
+        });
+
+        ComponentParts { model, widgets }
+    }
+
+    fn update(&mut self, msg: Self::Input, _sender: ComponentSender<Self>) {
+        match msg {
+            InfoInput::Tick => {
+                if let Some((used, total)) = read_mem_usage() {
+                    let frac = if total > 0.0 { used / total } else { 0.0 };
+                    self.mem_meter.set(frac, &format!("{used:.1}/{total:.0}G"));
+                }
+                self.uptime_s.set(&read_uptime(), "since boot");
+            }
+        }
+    }
+}
+
+fn dmi(path: &str) -> String {
+    sysfs::read(path).unwrap_or_else(|_| "Unknown".to_owned())
+}
+
 fn read_cpu_model() -> String {
     std::fs::read_to_string("/proc/cpuinfo")
         .ok()
@@ -36,28 +126,41 @@ fn read_cpu_model() -> String {
         .unwrap_or_else(|| "Unknown".to_owned())
 }
 
-/// Read total memory from /proc/meminfo and return a human-readable string.
-fn read_ram_total() -> String {
-    std::fs::read_to_string("/proc/meminfo")
-        .ok()
-        .and_then(|contents| {
-            contents
-                .lines()
-                .find(|l| l.starts_with("MemTotal:"))
-                .map(|l| {
-                    let kb: u64 = l
-                        .split_whitespace()
-                        .nth(1)
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or(0);
-                    let gb = kb as f64 / 1_048_576.0;
-                    format!("{gb:.1} GB")
-                })
-        })
-        .unwrap_or_else(|| "Unknown".to_owned())
+fn read_meminfo_kb(key: &str) -> Option<u64> {
+    let contents = std::fs::read_to_string("/proc/meminfo").ok()?;
+    crate::format::meminfo_kb(&contents, key)
 }
 
-/// Read the kernel version from /proc/version.
+fn read_ram_total() -> String {
+    read_meminfo_kb("MemTotal:").map_or_else(
+        || "Unknown".to_owned(),
+        |kb| format!("{:.1} GB", kb as f64 / 1_048_576.0),
+    )
+}
+
+/// Used and total memory in GiB, derived from `MemTotal` and `MemAvailable`.
+fn read_mem_usage() -> Option<(f64, f64)> {
+    let total = read_meminfo_kb("MemTotal:")?;
+    let available = read_meminfo_kb("MemAvailable:")?;
+    let gib = |kb: u64| kb as f64 / 1_048_576.0;
+    Some((gib(total.saturating_sub(available)), gib(total)))
+}
+
+fn read_uptime() -> String {
+    let secs = crate::num::round_u32(
+        std::fs::read_to_string("/proc/uptime")
+            .ok()
+            .and_then(|s| s.split_whitespace().next()?.parse::<f64>().ok())
+            .unwrap_or(0.0),
+    );
+    let (h, m) = (secs / 3600, (secs % 3600) / 60);
+    if h > 0 {
+        format!("{h}h {m:02}m")
+    } else {
+        format!("{m}m")
+    }
+}
+
 fn read_kernel_version() -> String {
     std::fs::read_to_string("/proc/version")
         .ok()
@@ -65,122 +168,14 @@ fn read_kernel_version() -> String {
         .unwrap_or_else(|| "Unknown".to_owned())
 }
 
-/// Gather simple storage info by reading /proc/mounts for the root filesystem.
 fn read_storage_info() -> String {
     std::fs::read_to_string("/proc/mounts")
         .ok()
         .and_then(|contents| {
             contents
                 .lines()
-                .find(|l| {
-                    let fields: Vec<&str> = l.split_whitespace().collect();
-                    fields.get(1) == Some(&"/")
-                })
+                .find(|l| l.split_whitespace().nth(1) == Some("/"))
                 .map(|l| l.split_whitespace().next().unwrap_or("Unknown").to_owned())
         })
         .unwrap_or_else(|| "Unknown".to_owned())
-}
-
-#[relm4::component(pub)]
-impl SimpleComponent for InfoPage {
-    type Init = ();
-    type Input = InfoInput;
-    type Output = ();
-
-    view! {
-        adw::PreferencesPage {
-            set_title: "Info",
-            set_icon_name: Some("dialog-information-symbolic"),
-
-            adw::PreferencesGroup {
-                set_title: "Device",
-
-                adw::ActionRow {
-                    set_title: "Model",
-                    #[watch]
-                    set_subtitle: &model.model_name,
-                },
-
-                adw::ActionRow {
-                    set_title: "Vendor",
-                    #[watch]
-                    set_subtitle: &model.vendor,
-                },
-
-                adw::ActionRow {
-                    set_title: "BIOS Version",
-                    #[watch]
-                    set_subtitle: &model.bios_version,
-                },
-            },
-
-            adw::PreferencesGroup {
-                set_title: "System",
-
-                adw::ActionRow {
-                    set_title: "CPU",
-                    #[watch]
-                    set_subtitle: &model.cpu_model,
-                },
-
-                adw::ActionRow {
-                    set_title: "RAM",
-                    #[watch]
-                    set_subtitle: &model.ram_total,
-                },
-
-                adw::ActionRow {
-                    set_title: "Kernel",
-                    #[watch]
-                    set_subtitle: &model.kernel_version,
-                },
-
-                adw::ActionRow {
-                    set_title: "Root Filesystem",
-                    #[watch]
-                    set_subtitle: &model.storage_info,
-                },
-            },
-        }
-    }
-
-    fn init(
-        _init: Self::Init,
-        root: Self::Root,
-        sender: ComponentSender<Self>,
-    ) -> ComponentParts<Self> {
-        let model = InfoPage {
-            model_name: "Loading...".to_owned(),
-            bios_version: "Loading...".to_owned(),
-            vendor: "Loading...".to_owned(),
-            cpu_model: "Loading...".to_owned(),
-            ram_total: "Loading...".to_owned(),
-            kernel_version: "Loading...".to_owned(),
-            storage_info: "Loading...".to_owned(),
-        };
-
-        let widgets = view_output!();
-        sender.input(InfoInput::Load);
-        ComponentParts { model, widgets }
-    }
-
-    fn update(&mut self, msg: Self::Input, _sender: ComponentSender<Self>) {
-        match msg {
-            InfoInput::Load => {
-                self.model_name = sysfs::read(crate::backend::detect::DMI_PRODUCT_NAME)
-                    .unwrap_or_else(|_| "Unknown".to_owned());
-
-                self.bios_version = sysfs::read(crate::backend::detect::DMI_BIOS_VERSION)
-                    .unwrap_or_else(|_| "Unknown".to_owned());
-
-                self.vendor = sysfs::read(crate::backend::detect::DMI_BOARD_VENDOR)
-                    .unwrap_or_else(|_| "Unknown".to_owned());
-
-                self.cpu_model = read_cpu_model();
-                self.ram_total = read_ram_total();
-                self.kernel_version = read_kernel_version();
-                self.storage_info = read_storage_info();
-            }
-        }
-    }
 }
