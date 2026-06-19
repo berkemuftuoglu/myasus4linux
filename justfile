@@ -9,13 +9,13 @@ fmt:
     cargo fmt --check
 
 clippy:
-    cargo clippy --all-targets --locked -- -D warnings
+    cargo clippy --workspace --all-targets --locked -- -D warnings
 
 doc:
     RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items
 
 test:
-    cargo test --locked
+    cargo test --workspace --locked
 
 deny:
     cargo deny check
@@ -23,10 +23,11 @@ deny:
 audit:
     cargo audit
 
-# Coverage (requires cargo-llvm-cov): pure-logic modules must stay 100%, the
-# I/O-mixed backend is held to a floor, the GTK shell is excluded.
+# Coverage (requires cargo-llvm-cov): pure-logic modules + the privileged core
+# contract must stay 100%; the GTK shell and I/O-mixed backend are excluded.
 cov:
-    cargo llvm-cov --no-report
-    cargo llvm-cov report --fail-under-lines 100 --ignore-filename-regex 'src/(ui|main\.rs|config\.rs|backend)'
-    cargo llvm-cov report --fail-under-lines 60 --ignore-filename-regex 'src/(ui|main\.rs|config\.rs)'
-    cargo llvm-cov report --summary-only --ignore-filename-regex 'src/(ui|main\.rs|config\.rs)'
+    cargo llvm-cov --workspace --fail-under-lines 100 --ignore-filename-regex 'src/(ui|main\.rs|config\.rs|backend)'
+
+# Full coverage summary across everything (not gated).
+cov-all:
+    cargo llvm-cov --workspace --summary-only

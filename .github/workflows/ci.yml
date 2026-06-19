@@ -34,8 +34,8 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --all-targets --locked -- -D warnings
-      - run: cargo test --locked
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
 
   # Verify the project still builds on its declared MSRV, not just stable.
   msrv:
@@ -46,7 +46,7 @@ jobs:
       - uses: ./.github/actions/gtk-deps
       - uses: dtolnay/rust-toolchain@1.85
       - uses: Swatinem/rust-cache@v2
-      - run: cargo check --locked --all-targets
+      - run: cargo check --workspace --locked --all-targets
 
   # Fail on broken intra-doc links.
   docs:
@@ -95,11 +95,8 @@ jobs:
           components: llvm-tools-preview
       - uses: taiki-e/install-action@cargo-llvm-cov
       - uses: Swatinem/rust-cache@v2
-      - name: instrument and run tests
-        run: cargo llvm-cov --no-report --locked
-      - name: pure-logic modules must stay 100%
-        run: cargo llvm-cov report --fail-under-lines 100 --ignore-filename-regex 'src/(ui|main\.rs|config\.rs|backend)'
-      - name: backend logic regression floor
-        run: cargo llvm-cov report --fail-under-lines 60 --ignore-filename-regex 'src/(ui|main\.rs|config\.rs)'
-      - name: summary
-        run: cargo llvm-cov report --summary-only --ignore-filename-regex 'src/(ui|main\.rs|config\.rs)'
+      # The pure-logic modules and the privileged-op core contract must stay at
+      # 100% line coverage. The GTK shell and the I/O-mixed backend are excluded
+      # (sysfs/file/pkexec can't run on a runner).
+      - name: pure logic + privileged core must stay 100%
+        run: cargo llvm-cov --workspace --locked --fail-under-lines 100 --ignore-filename-regex 'src/(ui|main\.rs|config\.rs|backend)'

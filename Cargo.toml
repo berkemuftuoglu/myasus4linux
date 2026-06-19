@@ -7,6 +7,12 @@ license = "GPL-3.0-or-later"
 description = "Open source replacement for ASUS MyASUS on Linux"
 authors = ["Berk Muftuoglu"]
 
+[lints]
+workspace = true
+
+[workspace]
+members = ["crates/myasus-core"]
+
 [dependencies]
 gtk = { version = "0.10", package = "gtk4" }
 adw = { version = "0.8", package = "libadwaita", features = ["v1_4"] }
@@ -26,7 +32,7 @@ glib-build-tools = "0.21"
 [dev-dependencies]
 tempfile = "3"
 
-[lints.clippy]
+[workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
 module_name_repetitions = "allow"
 must_use_candidate = "allow"
@@ -45,14 +51,13 @@ print_stderr = "warn"
 print_stdout = "warn"
 todo = "warn"
 unimplemented = "warn"
-# panic-class guardrails: hard-denied on production paths (allowed in tests via
-# the cfg(test) block in main.rs).
+# panic-class guardrails: hard-denied on production paths (allowed in tests).
 unwrap_used = "deny"
 expect_used = "deny"
 unwrap_in_result = "deny"
 panic = "deny"
 indexing_slicing = "deny"
 
-[lints.rust]
+[workspace.lints.rust]
 unsafe_code = "deny"
 rust_2018_idioms = { level = "warn", priority = -1 }
