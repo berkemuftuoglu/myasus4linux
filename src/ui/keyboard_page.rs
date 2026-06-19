@@ -17,9 +17,15 @@ pub enum KeyboardInput {
     LoadBrightness,
     BrightnessLoaded(u8),
     SetBrightness(u8),
-    BrightnessWritten { result: Result<(), BackendError>, prev: u8 },
+    BrightnessWritten {
+        result: Result<(), BackendError>,
+        prev: u8,
+    },
     SetScreen(u8),
-    ScreenWritten { result: Result<(), BackendError>, prev: u8 },
+    ScreenWritten {
+        result: Result<(), BackendError>,
+        prev: u8,
+    },
     ReadError(String),
 }
 
@@ -198,9 +204,11 @@ impl SimpleComponent for KeyboardPage {
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
         match msg {
             KeyboardInput::LoadBrightness => {
-                crate::ui::offload(sender.input_sender(), || match keyboard::read_brightness() {
-                    Ok(val) => KeyboardInput::BrightnessLoaded(val),
-                    Err(e) => KeyboardInput::ReadError(e.to_string()),
+                crate::ui::offload(sender.input_sender(), || {
+                    match keyboard::read_brightness() {
+                        Ok(val) => KeyboardInput::BrightnessLoaded(val),
+                        Err(e) => KeyboardInput::ReadError(e.to_string()),
+                    }
                 });
             }
             KeyboardInput::BrightnessLoaded(val) => {
@@ -239,9 +247,11 @@ impl SimpleComponent for KeyboardPage {
                 }
                 let prev = self.screen;
                 self.screen = val;
-                crate::ui::offload(sender.input_sender(), move || KeyboardInput::ScreenWritten {
-                    result: brightness::set_percent(val),
-                    prev,
+                crate::ui::offload(sender.input_sender(), move || {
+                    KeyboardInput::ScreenWritten {
+                        result: brightness::set_percent(val),
+                        prev,
+                    }
                 });
             }
             KeyboardInput::ScreenWritten { result, prev } => {

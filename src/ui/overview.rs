@@ -52,7 +52,10 @@ pub enum OverviewInput {
     Tick,
     Sampled(Box<OverviewSample>),
     SetMode(FanProfile),
-    ModeWritten { result: Result<(), BackendError>, prev: FanProfile },
+    ModeWritten {
+        result: Result<(), BackendError>,
+        prev: FanProfile,
+    },
 }
 
 /// Plain data carried back from the worker thread; no GTK, no borrowed state.
@@ -341,7 +344,8 @@ impl Overview {
         let n = cores.len().max(1) as f64;
         let load = cores.iter().map(|c| c.load).sum::<f64>() / n;
         let freq = f64::from(cores.iter().map(|c| c.mhz).sum::<u32>()) / n / 1000.0;
-        self.load_g.set(load / 100.0, &format!("{load:.0}%"), "Load");
+        self.load_g
+            .set(load / 100.0, &format!("{load:.0}%"), "Load");
         self.load_chart.push(load);
         self.freq_s.set(&format!("{freq:.1}"), "GHz, all cores");
         self.freq_s.push(freq);
@@ -394,7 +398,11 @@ impl Overview {
         }
         self.time_s.set(
             &duration_hm(b.time_remaining_h),
-            if charging { "until full" } else { "until empty" },
+            if charging {
+                "until full"
+            } else {
+                "until empty"
+            },
         );
         self.wear_s.set(
             &format!("{:.0}%", (100.0 - b.health_percent).max(0.0)),

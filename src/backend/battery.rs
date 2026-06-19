@@ -261,8 +261,14 @@ mod tests {
     #[test]
     fn status_parses_known_strings_and_charging() {
         assert_eq!(BatteryStatus::parse("Charging\n"), BatteryStatus::Charging);
-        assert_eq!(BatteryStatus::parse("DISCHARGING"), BatteryStatus::Discharging);
-        assert_eq!(BatteryStatus::parse("Not charging"), BatteryStatus::NotCharging);
+        assert_eq!(
+            BatteryStatus::parse("DISCHARGING"),
+            BatteryStatus::Discharging
+        );
+        assert_eq!(
+            BatteryStatus::parse("Not charging"),
+            BatteryStatus::NotCharging
+        );
         assert_eq!(BatteryStatus::parse("weird"), BatteryStatus::Unknown);
         assert!(BatteryStatus::parse("charging").is_charging());
         assert!(!BatteryStatus::parse("Full").is_charging());

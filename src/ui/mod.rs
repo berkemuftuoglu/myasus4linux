@@ -25,7 +25,10 @@ pub const POLL_SECS: u32 = 2;
 /// produces back to the component's input. Keeping sysfs reads off the GTK main
 /// thread is needed on every live page, so the pattern lives here once instead
 /// of being copied per page.
-pub fn offload<M: Send + 'static>(input: &relm4::Sender<M>, job: impl FnOnce() -> M + Send + 'static) {
+pub fn offload<M: Send + 'static>(
+    input: &relm4::Sender<M>,
+    job: impl FnOnce() -> M + Send + 'static,
+) {
     let input = input.clone();
     std::thread::spawn(move || {
         let _ = input.send(job());

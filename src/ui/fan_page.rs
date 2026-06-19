@@ -26,7 +26,10 @@ pub enum FanInput {
     Tick,
     Loaded(Box<FanSample>),
     SetProfile(FanProfile),
-    ProfileWritten { result: Result<(), BackendError>, prev: FanProfile },
+    ProfileWritten {
+        result: Result<(), BackendError>,
+        prev: FanProfile,
+    },
     ReadError(String),
 }
 

@@ -27,7 +27,10 @@ pub enum BatteryInput {
     LoadValues,
     ValuesLoaded(Box<battery::BatteryInfo>),
     SetChargeThreshold(u8),
-    ThresholdWritten { result: Result<(), BackendError>, prev: u8 },
+    ThresholdWritten {
+        result: Result<(), BackendError>,
+        prev: u8,
+    },
     ReadError(String),
 }
 
@@ -40,7 +43,11 @@ impl BatteryPage {
     /// Push a fresh battery reading into all the widgets.
     fn show_values(&mut self, info: &battery::BatteryInfo) {
         self.charging = info.is_charging();
-        let flow_label = if self.charging { "watts in" } else { "watts out" };
+        let flow_label = if self.charging {
+            "watts in"
+        } else {
+            "watts out"
+        };
 
         let cap = info.capacity;
         self.charge_cell.set(
@@ -268,9 +275,11 @@ impl SimpleComponent for BatteryPage {
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
         match msg {
             BatteryInput::LoadValues => {
-                crate::ui::offload(sender.input_sender(), || match battery::read_battery_info() {
-                    Ok(info) => BatteryInput::ValuesLoaded(Box::new(info)),
-                    Err(e) => BatteryInput::ReadError(e.to_string()),
+                crate::ui::offload(sender.input_sender(), || {
+                    match battery::read_battery_info() {
+                        Ok(info) => BatteryInput::ValuesLoaded(Box::new(info)),
+                        Err(e) => BatteryInput::ReadError(e.to_string()),
+                    }
                 });
             }
             BatteryInput::ValuesLoaded(info) => self.show_values(&info),
@@ -280,9 +289,11 @@ impl SimpleComponent for BatteryPage {
                 }
                 let prev = self.charge_threshold;
                 self.charge_threshold = val;
-                crate::ui::offload(sender.input_sender(), move || BatteryInput::ThresholdWritten {
-                    result: battery::set_charge_threshold(val),
-                    prev,
+                crate::ui::offload(sender.input_sender(), move || {
+                    BatteryInput::ThresholdWritten {
+                        result: battery::set_charge_threshold(val),
+                        prev,
+                    }
                 });
             }
             BatteryInput::ThresholdWritten { result, prev } => {
