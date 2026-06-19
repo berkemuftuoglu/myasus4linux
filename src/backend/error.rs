@@ -31,4 +31,7 @@ pub enum BackendError {
 
     #[error("privileged write failed")]
     PrivilegedWrite(#[source] std::io::Error),
+
+    #[error("refused to write to non-whitelisted path: {0}")]
+    DisallowedPath(String),
 }
