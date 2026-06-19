@@ -11,6 +11,14 @@ pub const CHARGE_THRESHOLD_PATH: &str = "/sys/class/power_supply/BAT0/charge_con
 pub const FAN_PROFILE_PATH: &str = "/sys/devices/platform/asus-nb-wmi/throttle_thermal_policy";
 pub const KBD_BACKLIGHT_PATH: &str = "/sys/class/leds/asus::kbd_backlight/brightness";
 
+/// The well-known D-Bus name the privileged helper owns on the system bus, and
+/// the object path it serves. The daemon connects/serves with these; the client
+/// proxy targets them. NOTE: `#[zbus::interface]`/`#[zbus::proxy]` attribute
+/// strings cannot reference a const, so the literals there must stay identical
+/// to these.
+pub const DBUS_NAME: &str = "io.github.berkmuftuoglu.MyAsus4Linux.Helper";
+pub const DBUS_PATH: &str = "/io/github/berkmuftuoglu/MyAsus4Linux/Helper";
+
 /// Charge limit bounds. Below `CHARGE_MIN` the battery can over-discharge; the
 /// kernel rejects anything outside this, but owning the range here means the
 /// daemon and the GUI agree on one definition instead of three.

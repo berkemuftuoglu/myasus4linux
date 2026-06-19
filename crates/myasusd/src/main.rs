@@ -19,9 +19,7 @@
 mod helper;
 
 use helper::Helper;
-
-const BUS_NAME: &str = "io.github.berkmuftuoglu.MyAsus4Linux.Helper";
-const OBJECT_PATH: &str = "/io/github/berkmuftuoglu/MyAsus4Linux/Helper";
+use myasus_core::{DBUS_NAME, DBUS_PATH};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -39,12 +37,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Held (not `_`) so the connection lives until shutdown; dropping it would
     // release the bus name.
     let _connection = zbus::connection::Builder::system()?
-        .name(BUS_NAME)?
-        .serve_at(OBJECT_PATH, Helper)?
+        .name(DBUS_NAME)?
+        .serve_at(DBUS_PATH, Helper)?
         .build()
         .await?;
 
-    tracing::info!("myasusd up, owning {BUS_NAME} at {OBJECT_PATH}");
+    tracing::info!("myasusd up, owning {DBUS_NAME} at {DBUS_PATH}");
 
     wait_for_shutdown().await;
     tracing::info!("shutting down");
