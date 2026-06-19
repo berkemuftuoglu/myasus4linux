@@ -1,7 +1,8 @@
-//! Single source of truth for dashboard colours. Every widget that draws reads
-//! its threshold colours from here, so a metric can never show two different
-//! greens in two different widgets (which is exactly what happened when each
-//! widget carried its own copy of the ramp).
+//! Single source of truth for the Cairo-drawn dashboard colours (gauges, meters,
+//! charts, sparklines). Every drawn widget reads its threshold colours from here,
+//! so a metric can never show two different greens. The CSS chrome (panel
+//! borders, headers) keeps its own accent in `ui/style.css`; keep the two in the
+//! same colour family when retuning either.
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rgb {

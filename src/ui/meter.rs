@@ -1,6 +1,6 @@
-//! A bullet-bar meter: label · range-banded bar · tabular value.
-//! Per the research, this beats both gauges and text lists for a dense,
-//! scannable matrix of comparable readings (sensors, per-core load).
+//! A bullet-bar meter: label · range-banded bar · tabular value. A bar packs a
+//! dense, scannable matrix of comparable readings (sensors, per-core load) into
+//! far less width than one gauge each would take.
 
 use std::cell::Cell;
 use std::f64::consts::PI;

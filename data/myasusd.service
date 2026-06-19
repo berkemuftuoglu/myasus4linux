@@ -15,10 +15,20 @@ ProtectSystem=strict
 ReadWritePaths=/sys/devices/platform/asus-nb-wmi /sys/class/power_supply /sys/class/leds
 NoNewPrivileges=yes
 ProtectKernelLogs=yes
+ProtectKernelModules=yes
 ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
 RestrictNamespaces=yes
 RestrictRealtime=yes
+RestrictSUIDSGID=yes
+# It only ever talks D-Bus over a unix socket; it needs no network.
+RestrictAddressFamilies=AF_UNIX
+LockPersonality=yes
+SystemCallArchitectures=native
 PrivateTmp=yes
+# NB: not ProtectKernelTunables -- that remounts /sys read-only and would block
+# the very writes this daemon exists to make.
 
 # Enabling the daemon (systemctl enable myasusd) makes systemd start it at boot,
 # where it re-applies the saved charge limit. It stays D-Bus activatable too.

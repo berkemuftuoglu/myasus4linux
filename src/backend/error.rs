@@ -20,14 +20,11 @@ pub enum BackendError {
     #[error("failed to parse value from {path}: {details}")]
     ParseError { path: String, details: String },
 
-    #[error("invalid charge threshold {0} (must be 40-100)")]
-    InvalidThreshold(u8),
-
-    #[error("invalid keyboard brightness {0} (must be 0-3)")]
-    InvalidBrightness(u8),
-
     #[error("unknown fan profile value {0}")]
     UnknownFanProfile(u8),
+
+    #[error(transparent)]
+    Validate(#[from] myasus_core::ValidateError),
 
     #[error("privileged daemon call failed: {0}")]
     Daemon(#[source] zbus::Error),

@@ -4,6 +4,8 @@
 //! value to the daemon, which authorises the caller with polkit and performs the
 //! write. These calls block, so the backend runs them on a worker thread.
 
+use std::sync::OnceLock;
+
 use super::error::BackendError;
 
 #[zbus::proxy(
@@ -17,9 +19,20 @@ trait Helper {
     fn set_keyboard_backlight(&self, value: u8) -> zbus::Result<()>;
 }
 
+/// One shared system-bus connection for the whole process. Opening a connection
+/// performs a bus handshake, so caching it keeps a burst of writes -- dragging
+/// the charge slider fires one per step -- from reconnecting on every call.
+fn connection() -> Result<&'static zbus::blocking::Connection, BackendError> {
+    static CONN: OnceLock<zbus::blocking::Connection> = OnceLock::new();
+    if let Some(conn) = CONN.get() {
+        return Ok(conn);
+    }
+    let conn = zbus::blocking::Connection::system().map_err(BackendError::Daemon)?;
+    Ok(CONN.get_or_init(|| conn))
+}
+
 fn proxy() -> Result<HelperProxyBlocking<'static>, BackendError> {
-    let connection = zbus::blocking::Connection::system().map_err(BackendError::Daemon)?;
-    HelperProxyBlocking::new(&connection).map_err(BackendError::Daemon)
+    HelperProxyBlocking::new(connection()?).map_err(BackendError::Daemon)
 }
 
 pub fn set_charge_threshold(value: u8) -> Result<(), BackendError> {

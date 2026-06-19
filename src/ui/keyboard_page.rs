@@ -17,8 +17,9 @@ pub enum KeyboardInput {
     LoadBrightness,
     BrightnessLoaded(u8),
     SetBrightness(u8),
-    BrightnessWritten(Result<(), BackendError>),
+    BrightnessWritten { result: Result<(), BackendError>, prev: u8 },
     SetScreen(u8),
+    ScreenWritten { result: Result<(), BackendError>, prev: u8 },
     ReadError(String),
 }
 
@@ -156,7 +157,7 @@ impl SimpleComponent for KeyboardPage {
                             #[block_signal(screen_changed)]
                             set_value: f64::from(model.screen),
                             connect_value_changed[sender] => move |s| {
-                                sender.input(KeyboardInput::SetScreen(crate::num::round_u8(s.value())));
+                                sender.input(KeyboardInput::SetScreen(crate::num::round_u8_in(s.value(), 5, 100)));
                             } @screen_changed,
                         },
                     },
@@ -197,13 +198,9 @@ impl SimpleComponent for KeyboardPage {
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
         match msg {
             KeyboardInput::LoadBrightness => {
-                let input_sender = sender.input_sender().clone();
-                std::thread::spawn(move || {
-                    let msg = match keyboard::read_brightness() {
-                        Ok(val) => KeyboardInput::BrightnessLoaded(val),
-                        Err(e) => KeyboardInput::ReadError(e.to_string()),
-                    };
-                    let _ = input_sender.send(msg);
+                crate::ui::offload(sender.input_sender(), || match keyboard::read_brightness() {
+                    Ok(val) => KeyboardInput::BrightnessLoaded(val),
+                    Err(e) => KeyboardInput::ReadError(e.to_string()),
                 });
             }
             KeyboardInput::BrightnessLoaded(val) => {
@@ -215,18 +212,24 @@ impl SimpleComponent for KeyboardPage {
                 if val == self.brightness {
                     return;
                 }
+                let prev = self.brightness;
                 self.brightness = val;
                 self.level
                     .set(f64::from(val) / 3.0, keyboard::brightness_label(val));
-                let input_sender = sender.input_sender().clone();
-                std::thread::spawn(move || {
-                    let _ = input_sender.send(KeyboardInput::BrightnessWritten(
-                        keyboard::set_brightness(val),
-                    ));
+                crate::ui::offload(sender.input_sender(), move || {
+                    KeyboardInput::BrightnessWritten {
+                        result: keyboard::set_brightness(val),
+                        prev,
+                    }
                 });
             }
-            KeyboardInput::BrightnessWritten(result) => {
+            KeyboardInput::BrightnessWritten { result, prev } => {
                 if let Err(e) = result {
+                    // The write failed, so the hardware never changed: undo the
+                    // optimistic UI so it doesn't lie about the active level.
+                    self.brightness = prev;
+                    self.level
+                        .set(f64::from(prev) / 3.0, keyboard::brightness_label(prev));
                     let _ = sender.output(KeyboardOutput::Error(e.to_string()));
                 }
             }
@@ -234,13 +237,18 @@ impl SimpleComponent for KeyboardPage {
                 if val == self.screen {
                     return;
                 }
+                let prev = self.screen;
                 self.screen = val;
-                let input_sender = sender.input_sender().clone();
-                std::thread::spawn(move || {
-                    if let Err(e) = brightness::set_percent(val) {
-                        let _ = input_sender.send(KeyboardInput::ReadError(e.to_string()));
-                    }
+                crate::ui::offload(sender.input_sender(), move || KeyboardInput::ScreenWritten {
+                    result: brightness::set_percent(val),
+                    prev,
                 });
+            }
+            KeyboardInput::ScreenWritten { result, prev } => {
+                if let Err(e) = result {
+                    self.screen = prev;
+                    let _ = sender.output(KeyboardOutput::Error(e.to_string()));
+                }
             }
             KeyboardInput::ReadError(msg) => {
                 let _ = sender.output(KeyboardOutput::Error(msg));

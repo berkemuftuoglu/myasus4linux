@@ -1,13 +1,14 @@
 [package]
 name = "myasus-core"
-version = "0.1.0"
-edition = "2024"
-rust-version = "1.85"
-license = "GPL-3.0-or-later"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
 description = "Shared privileged-operation contract for myasus4linux (paths, validation, writes)"
 
 [dependencies]
-thiserror = "2"
+thiserror.workspace = true
 
 [lints]
 workspace = true

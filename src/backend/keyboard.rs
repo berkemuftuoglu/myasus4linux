@@ -7,9 +7,7 @@ pub fn read_brightness() -> Result<u8, BackendError> {
 }
 
 pub fn set_brightness(value: u8) -> Result<(), BackendError> {
-    if value > 3 {
-        return Err(BackendError::InvalidBrightness(value));
-    }
+    myasus_core::Op::KeyboardBacklight(value).validate()?;
     super::daemon::set_keyboard_backlight(value)
 }
 
@@ -30,7 +28,10 @@ mod tests {
     #[test]
     fn brightness_rejects_above_3() {
         let err = set_brightness(4).unwrap_err();
-        assert!(matches!(err, BackendError::InvalidBrightness(4)));
+        assert!(matches!(
+            err,
+            BackendError::Validate(myasus_core::ValidateError::KeyboardBacklight(4))
+        ));
     }
 
     #[test]

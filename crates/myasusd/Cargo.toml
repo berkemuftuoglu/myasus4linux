@@ -1,9 +1,10 @@
 [package]
 name = "myasusd"
-version = "0.1.0"
-edition = "2024"
-rust-version = "1.85"
-license = "GPL-3.0-or-later"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
 description = "Privileged D-Bus system daemon for myasus4linux hardware controls"
 
 [[bin]]
@@ -11,13 +12,16 @@ name = "myasusd"
 path = "src/main.rs"
 
 [dependencies]
-myasus-core = { path = "../myasus-core" }
-zbus = "5"
+myasus-core.workspace = true
+zbus.workspace = true
 zbus_polkit = "5"
-thiserror = "2"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true

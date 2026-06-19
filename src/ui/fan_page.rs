@@ -13,6 +13,9 @@ use crate::backend::{
 
 pub struct FanPage {
     current_profile: FanProfile,
+    // True while our own profile write is in flight, so a stale background read
+    // doesn't stomp the optimistic value and bounce the toggles.
+    mode_pending: bool,
     temp_g: Gauge,
     fan_stats: Vec<(String, Stat)>,
     zone_meters: Vec<(String, Meter)>,
@@ -21,10 +24,19 @@ pub struct FanPage {
 #[derive(Debug)]
 pub enum FanInput {
     Tick,
-    Loaded(FanProfile, Option<f64>, Vec<fan::FanReading>),
-    SetProfile(u8),
-    ProfileWritten(Result<(), BackendError>),
+    Loaded(Box<FanSample>),
+    SetProfile(FanProfile),
+    ProfileWritten { result: Result<(), BackendError>, prev: FanProfile },
     ReadError(String),
+}
+
+/// Plain data carried back from the worker thread.
+#[derive(Debug)]
+pub struct FanSample {
+    profile: FanProfile,
+    temp: Option<f64>,
+    fans: Vec<fan::FanReading>,
+    zones: Vec<thermal::ThermalZone>,
 }
 
 #[derive(Debug)]
@@ -85,7 +97,7 @@ impl SimpleComponent for FanPage {
                                 #[watch]
                                 set_active: model.current_profile == FanProfile::Quiet,
                                 connect_clicked[sender] => move |b| if b.is_active() {
-                                    sender.input(FanInput::SetProfile(FanProfile::Quiet as u8));
+                                    sender.input(FanInput::SetProfile(FanProfile::Quiet));
                                 },
                             },
                             #[name = "mode_balanced"]
@@ -94,7 +106,7 @@ impl SimpleComponent for FanPage {
                                 #[watch]
                                 set_active: model.current_profile == FanProfile::Balanced,
                                 connect_clicked[sender] => move |b| if b.is_active() {
-                                    sender.input(FanInput::SetProfile(FanProfile::Balanced as u8));
+                                    sender.input(FanInput::SetProfile(FanProfile::Balanced));
                                 },
                             },
                             #[name = "mode_perf"]
@@ -103,7 +115,7 @@ impl SimpleComponent for FanPage {
                                 #[watch]
                                 set_active: model.current_profile == FanProfile::Performance,
                                 connect_clicked[sender] => move |b| if b.is_active() {
-                                    sender.input(FanInput::SetProfile(FanProfile::Performance as u8));
+                                    sender.input(FanInput::SetProfile(FanProfile::Performance));
                                 },
                             },
                         },
@@ -139,6 +151,7 @@ impl SimpleComponent for FanPage {
     ) -> ComponentParts<Self> {
         let mut model = FanPage {
             current_profile: FanProfile::Balanced,
+            mode_pending: false,
             temp_g: Gauge::new(150, Accent::ByValue),
             fan_stats: Vec::new(),
             zone_meters: Vec::new(),
@@ -168,20 +181,12 @@ impl SimpleComponent for FanPage {
         }
 
         let sensors = Panel::new("Thermal Sensors");
-        sensors.body.set_orientation(gtk::Orientation::Vertical);
-        sensors.body.set_spacing(8);
-        let mut zones = thermal::read_zones();
-        zones.sort_by(|a, b| a.label.cmp(&b.label));
-        for zone in zones {
-            let meter = Meter::new(&zone.label);
-            sensors.body.append(&meter.root);
-            model.zone_meters.push((zone.label, meter));
-        }
+        super::zones::build(&sensors, &mut model.zone_meters);
         widgets.sensors_slot.append(&sensors.root);
 
         sender.input(FanInput::Tick);
         let ticker = sender.clone();
-        glib::timeout_add_seconds_local(2, move || {
+        glib::timeout_add_seconds_local(crate::ui::POLL_SECS, move || {
             ticker.input(FanInput::Tick);
             glib::ControlFlow::Continue
         });
@@ -192,25 +197,26 @@ impl SimpleComponent for FanPage {
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
         match msg {
             FanInput::Tick => {
-                let zones = thermal::read_zones();
-                for (label, meter) in &self.zone_meters {
-                    if let Some(zone) = zones.iter().find(|z| &z.label == label) {
-                        meter.set(zone.celsius / 100.0, &format!("{:.0}°C", zone.celsius));
-                    }
-                }
-                let input_sender = sender.input_sender().clone();
-                std::thread::spawn(move || {
-                    let msg = match fan::read_profile() {
-                        Ok(profile) => {
-                            FanInput::Loaded(profile, fan::read_cpu_temp(), fan::read_fans())
-                        }
-                        Err(e) => FanInput::ReadError(e.to_string()),
-                    };
-                    let _ = input_sender.send(msg);
+                crate::ui::offload(sender.input_sender(), || match fan::read_profile() {
+                    Ok(profile) => FanInput::Loaded(Box::new(FanSample {
+                        profile,
+                        temp: fan::read_cpu_temp(),
+                        fans: fan::read_fans(),
+                        zones: thermal::read_zones(),
+                    })),
+                    Err(e) => FanInput::ReadError(e.to_string()),
                 });
             }
-            FanInput::Loaded(profile, temp, fans) => {
-                self.current_profile = profile;
+            FanInput::Loaded(sample) => {
+                let FanSample {
+                    profile,
+                    temp,
+                    fans,
+                    zones,
+                } = *sample;
+                if !self.mode_pending {
+                    self.current_profile = profile;
+                }
                 if let Some(t) = temp {
                     self.temp_g
                         .set(t / 100.0, &format!("{t:.0}°"), "CPU package");
@@ -220,19 +226,24 @@ impl SimpleComponent for FanPage {
                         stat.set(&reading.rpm.to_string(), "RPM");
                     }
                 }
+                super::zones::update(&self.zone_meters, &zones);
             }
-            FanInput::SetProfile(raw) => {
-                if let Ok(profile) = FanProfile::from_raw(raw) {
-                    self.current_profile = profile;
-                    let input_sender = sender.input_sender().clone();
-                    std::thread::spawn(move || {
-                        let _ =
-                            input_sender.send(FanInput::ProfileWritten(fan::set_profile(profile)));
-                    });
+            FanInput::SetProfile(profile) => {
+                if profile == self.current_profile {
+                    return;
                 }
+                let prev = self.current_profile;
+                self.current_profile = profile;
+                self.mode_pending = true;
+                crate::ui::offload(sender.input_sender(), move || FanInput::ProfileWritten {
+                    result: fan::set_profile(profile),
+                    prev,
+                });
             }
-            FanInput::ProfileWritten(result) => {
+            FanInput::ProfileWritten { result, prev } => {
+                self.mode_pending = false;
                 if let Err(e) = result {
+                    self.current_profile = prev;
                     let _ = sender.output(FanOutput::Error(e.to_string()));
                 }
             }

@@ -10,14 +10,28 @@ use super::panel::Panel;
 use super::stat::Stat;
 use crate::backend::{
     battery,
-    cpu::CpuMonitor,
+    cpu::{CoreStat, CpuMonitor},
+    detect::HardwareFeatures,
+    error::BackendError,
     fan::{self, FanProfile},
-    thermal,
+    safeguards, thermal,
 };
 use crate::format::duration_hm;
 use crate::palette::{self, Rgb};
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent UI capability and transient-state flags; clearer as named bools than packed"
+)]
 pub struct Overview {
+    monitor: Option<CpuMonitor>,
+    has_battery: bool,
+    low_batt_warned: bool,
+    thermal_warned: bool,
+    // True while one of our own profile writes is in flight, so a stale
+    // background read doesn't stomp the optimistic value.
+    mode_pending: bool,
+    current_profile: FanProfile,
     load_g: Gauge,
     temp_g: Gauge,
     batt_cell: BatteryCell,
@@ -31,14 +45,25 @@ pub struct Overview {
     core_leds: Vec<LedBar>,
     zone_panel: Panel,
     zone_meters: Vec<(String, Meter)>,
-    monitor: CpuMonitor,
-    active_mode: usize,
 }
 
 #[derive(Debug)]
 pub enum OverviewInput {
     Tick,
-    SetMode(usize),
+    Sampled(Box<OverviewSample>),
+    SetMode(FanProfile),
+    ModeWritten { result: Result<(), BackendError>, prev: FanProfile },
+}
+
+/// Plain data carried back from the worker thread; no GTK, no borrowed state.
+#[derive(Debug)]
+pub struct OverviewSample {
+    monitor: CpuMonitor,
+    cores: Vec<CoreStat>,
+    cpu_temp: Option<f64>,
+    zones: Vec<thermal::ThermalZone>,
+    battery: Option<battery::BatteryInfo>,
+    profile: Option<FanProfile>,
 }
 
 #[derive(Debug)]
@@ -48,7 +73,7 @@ pub enum OverviewOutput {
 
 #[relm4::component(pub)]
 impl SimpleComponent for Overview {
-    type Init = ();
+    type Init = HardwareFeatures;
     type Input = OverviewInput;
     type Output = OverviewOutput;
 
@@ -133,27 +158,27 @@ impl SimpleComponent for Overview {
                         gtk::ToggleButton {
                             set_label: "Quiet",
                             #[watch]
-                            set_active: model.active_mode == 0,
+                            set_active: model.current_profile == FanProfile::Quiet,
                             connect_clicked[sender] => move |b| if b.is_active() {
-                                sender.input(OverviewInput::SetMode(0));
+                                sender.input(OverviewInput::SetMode(FanProfile::Quiet));
                             },
                         },
                         #[name = "mode_balanced"]
                         gtk::ToggleButton {
                             set_label: "Balanced",
                             #[watch]
-                            set_active: model.active_mode == 1,
+                            set_active: model.current_profile == FanProfile::Balanced,
                             connect_clicked[sender] => move |b| if b.is_active() {
-                                sender.input(OverviewInput::SetMode(1));
+                                sender.input(OverviewInput::SetMode(FanProfile::Balanced));
                             },
                         },
                         #[name = "mode_perf"]
                         gtk::ToggleButton {
                             set_label: "Performance",
                             #[watch]
-                            set_active: model.active_mode == 2,
+                            set_active: model.current_profile == FanProfile::Performance,
                             connect_clicked[sender] => move |b| if b.is_active() {
-                                sender.input(OverviewInput::SetMode(2));
+                                sender.input(OverviewInput::SetMode(FanProfile::Performance));
                             },
                         },
                     },
@@ -163,11 +188,20 @@ impl SimpleComponent for Overview {
     }
 
     fn init(
-        _init: Self::Init,
+        features: Self::Init,
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
+        let mut monitor = CpuMonitor::new();
+        let cores = monitor.sample();
+
         let mut model = Overview {
+            monitor: Some(monitor),
+            has_battery: features.battery,
+            low_batt_warned: false,
+            thermal_warned: false,
+            mode_pending: false,
+            current_profile: FanProfile::Balanced,
             load_g: Gauge::new(168, Accent::ByValue),
             temp_g: Gauge::new(168, Accent::ByValue),
             batt_cell: BatteryCell::new(168),
@@ -181,8 +215,6 @@ impl SimpleComponent for Overview {
             core_leds: Vec::new(),
             zone_panel: Panel::new("Thermal Sensors"),
             zone_meters: Vec::new(),
-            monitor: CpuMonitor::new(),
-            active_mode: 1,
         };
 
         let widgets = view_output!();
@@ -195,10 +227,12 @@ impl SimpleComponent for Overview {
             &Panel::metric("CPU Temperature", &model.temp_g.area, 240, true),
             -1,
         );
-        widgets.heroes.insert(
-            &Panel::metric("Battery", &model.batt_cell.area, 240, true),
-            -1,
-        );
+        if model.has_battery {
+            widgets.heroes.insert(
+                &Panel::metric("Battery", &model.batt_cell.area, 240, true),
+                -1,
+            );
+        }
 
         for s in [&model.power_s, &model.freq_s, &model.time_s, &model.wear_s] {
             s.root.set_size_request(168, -1);
@@ -214,32 +248,12 @@ impl SimpleComponent for Overview {
             -1,
         );
 
-        model
-            .core_panel
-            .body
-            .set_orientation(gtk::Orientation::Vertical);
-        model.core_panel.body.set_spacing(7);
         model.core_panel.root.set_size_request(320, -1);
-        for core in model.monitor.sample() {
-            let led = LedBar::new(&format!("Core {}", core.id));
-            model.core_panel.body.append(&led.root);
-            model.core_leds.push(led);
-        }
+        super::cores::build(&model.core_panel, &mut model.core_leds, &cores);
         widgets.matrices.insert(&model.core_panel.root, -1);
 
-        model
-            .zone_panel
-            .body
-            .set_orientation(gtk::Orientation::Vertical);
-        model.zone_panel.body.set_spacing(7);
         model.zone_panel.root.set_size_request(320, -1);
-        let mut zones = thermal::read_zones();
-        zones.sort_by(|a, b| a.label.cmp(&b.label));
-        for zone in zones {
-            let meter = Meter::new(&zone.label);
-            model.zone_panel.body.append(&meter.root);
-            model.zone_meters.push((zone.label, meter));
-        }
+        super::zones::build(&model.zone_panel, &mut model.zone_meters);
         widgets.matrices.insert(&model.zone_panel.root, -1);
 
         widgets.mode_balanced.set_group(Some(&widgets.mode_quiet));
@@ -247,7 +261,7 @@ impl SimpleComponent for Overview {
 
         sender.input(OverviewInput::Tick);
         let ticker = sender.clone();
-        glib::timeout_add_seconds_local(1, move || {
+        glib::timeout_add_seconds_local(crate::ui::POLL_SECS, move || {
             ticker.input(OverviewInput::Tick);
             glib::ControlFlow::Continue
         });
@@ -258,89 +272,146 @@ impl SimpleComponent for Overview {
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
         match msg {
             OverviewInput::Tick => {
-                let cores = self.monitor.sample();
-                let n = cores.len().max(1) as f64;
-                let load = cores.iter().map(|c| c.load).sum::<f64>() / n;
-                let freq = f64::from(cores.iter().map(|c| c.mhz).sum::<u32>()) / n / 1000.0;
-
-                self.load_g
-                    .set(load / 100.0, &format!("{load:.0}%"), "Load");
-                self.load_chart.push(load);
-                self.freq_s.set(&format!("{freq:.1}"), "GHz, all cores");
-                self.freq_s.push(freq);
-
-                for (core, led) in cores.iter().zip(&self.core_leds) {
-                    led.set(
-                        core.load / 100.0,
-                        &format!("{:.1}GHz", f64::from(core.mhz) / 1000.0),
-                    );
+                if let Some(mut monitor) = self.monitor.take() {
+                    let has_battery = self.has_battery;
+                    crate::ui::offload(sender.input_sender(), move || {
+                        let cores = monitor.sample();
+                        OverviewInput::Sampled(Box::new(OverviewSample {
+                            cores,
+                            cpu_temp: fan::read_cpu_temp(),
+                            zones: thermal::read_zones(),
+                            battery: if has_battery {
+                                battery::read_battery_info().ok()
+                            } else {
+                                None
+                            },
+                            profile: fan::read_profile().ok(),
+                            monitor,
+                        }))
+                    });
                 }
-                self.core_panel.set_corner(&format!("avg {load:.0}%"));
-
-                if let Some(t) = fan::read_cpu_temp() {
-                    self.temp_g.set(t / 100.0, &format!("{t:.0}°"), "CPU");
-                    self.temp_chart.push(t);
-                }
-
-                let zones = thermal::read_zones();
-                for (label, meter) in &self.zone_meters {
-                    if let Some(zone) = zones.iter().find(|z| &z.label == label) {
-                        meter.set(zone.celsius / 100.0, &format!("{:.0}°C", zone.celsius));
-                    }
-                }
-                if let Some(hottest) = zones.iter().map(|z| z.celsius).reduce(f64::max) {
-                    self.zone_panel.set_corner(&format!("max {hottest:.0}°C"));
-                }
-
-                if let Ok(b) = battery::read_battery_info() {
-                    let cap = b.capacity;
-                    let charging = b.is_charging();
-                    self.batt_cell.set(
-                        f64::from(cap) / 100.0,
-                        charging,
-                        &format!("{cap}%"),
-                        if charging { "charging" } else { "battery" },
-                    );
-                    if let Some(w) = b.power_w {
-                        self.power_s.set(&format!("{w:.1}"), "watts, current flow");
-                        self.power_s.push(w);
-                    } else {
-                        self.power_s.set("—", "watts");
-                    }
-                    self.time_s.set(
-                        &duration_hm(b.time_remaining_h),
-                        if charging {
-                            "until full"
-                        } else {
-                            "until empty"
-                        },
-                    );
-                    self.wear_s.set(
-                        &format!("{:.0}%", (100.0 - b.health_percent).max(0.0)),
-                        "capacity lost",
-                    );
-                }
-
-                self.active_mode = match fan::read_profile().unwrap_or(FanProfile::Balanced) {
-                    FanProfile::Quiet => 0,
-                    FanProfile::Balanced => 1,
-                    FanProfile::Performance => 2,
-                };
             }
-            OverviewInput::SetMode(index) => {
-                self.active_mode = index;
-                let profile = match index {
-                    0 => FanProfile::Quiet,
-                    2 => FanProfile::Performance,
-                    _ => FanProfile::Balanced,
-                };
-                let out = sender.output_sender().clone();
-                std::thread::spawn(move || {
-                    if let Err(e) = fan::set_profile(profile) {
-                        let _ = out.send(OverviewOutput::Error(e.to_string()));
-                    }
+            OverviewInput::Sampled(sample) => self.show_sample(*sample, &sender),
+            OverviewInput::SetMode(profile) => {
+                if profile == self.current_profile {
+                    return;
+                }
+                let prev = self.current_profile;
+                self.current_profile = profile;
+                self.mode_pending = true;
+                crate::ui::offload(sender.input_sender(), move || OverviewInput::ModeWritten {
+                    result: fan::set_profile(profile),
+                    prev,
                 });
             }
+            OverviewInput::ModeWritten { result, prev } => {
+                self.mode_pending = false;
+                if let Err(e) = result {
+                    self.current_profile = prev;
+                    let _ = sender.output(OverviewOutput::Error(e.to_string()));
+                }
+            }
+        }
+    }
+}
+
+impl Overview {
+    /// Apply a worker-thread sample to the dashboard widgets and run the safety
+    /// policies. Runs on the GTK main thread, so touching widgets is fine here.
+    fn show_sample(&mut self, sample: OverviewSample, sender: &ComponentSender<Self>) {
+        let OverviewSample {
+            monitor,
+            cores,
+            cpu_temp,
+            zones,
+            battery,
+            profile,
+        } = sample;
+        self.monitor = Some(monitor);
+        // Adopt the freshly-read profile so the safeguards reason about the
+        // current mode -- but not while one of our own writes is still in flight,
+        // since a stale read would stomp the optimistic value and bounce the
+        // toggles. On a read error keep the last known mode.
+        if let Some(profile) = profile {
+            if !self.mode_pending {
+                self.current_profile = profile;
+            }
+        }
+
+        let n = cores.len().max(1) as f64;
+        let load = cores.iter().map(|c| c.load).sum::<f64>() / n;
+        let freq = f64::from(cores.iter().map(|c| c.mhz).sum::<u32>()) / n / 1000.0;
+        self.load_g.set(load / 100.0, &format!("{load:.0}%"), "Load");
+        self.load_chart.push(load);
+        self.freq_s.set(&format!("{freq:.1}"), "GHz, all cores");
+        self.freq_s.push(freq);
+        super::cores::update(&self.core_leds, &cores);
+        self.core_panel.set_corner(&format!("avg {load:.0}%"));
+
+        if let Some(t) = cpu_temp {
+            self.temp_g.set(t / 100.0, &format!("{t:.0}°"), "CPU");
+            self.temp_chart.push(t);
+        }
+
+        super::zones::update(&self.zone_meters, &zones);
+        if let Some(hottest) = zones.iter().map(|z| z.celsius).reduce(f64::max) {
+            self.zone_panel.set_corner(&format!("max {hottest:.0}°C"));
+            // Safeguard: a critically hot sensor forces maximum cooling,
+            // overriding whatever profile is selected. Warn once per hot episode
+            // (reset once it cools) so the toast doesn't repeat every tick.
+            if safeguards::thermal_override(hottest, self.current_profile).is_some() {
+                if !self.thermal_warned {
+                    self.thermal_warned = true;
+                    let _ = sender.output(OverviewOutput::Error(format!(
+                        "{hottest:.0}°C is too hot, forcing Performance to cool down"
+                    )));
+                }
+                sender.input(OverviewInput::SetMode(FanProfile::Performance));
+            } else if hottest < safeguards::THERMAL_LIMIT_C {
+                self.thermal_warned = false;
+            }
+        }
+
+        if let Some(b) = battery {
+            self.show_battery(&b, sender);
+        }
+    }
+
+    fn show_battery(&mut self, b: &battery::BatteryInfo, sender: &ComponentSender<Self>) {
+        let cap = b.capacity;
+        let charging = b.is_charging();
+        self.batt_cell.set(
+            f64::from(cap) / 100.0,
+            charging,
+            &format!("{cap}%"),
+            if charging { "charging" } else { "battery" },
+        );
+        if let Some(w) = b.power_w {
+            self.power_s.set(&format!("{w:.1}"), "watts, current flow");
+            self.power_s.push(w);
+        } else {
+            self.power_s.set("—", "watts");
+        }
+        self.time_s.set(
+            &duration_hm(b.time_remaining_h),
+            if charging { "until full" } else { "until empty" },
+        );
+        self.wear_s.set(
+            &format!("{:.0}%", (100.0 - b.health_percent).max(0.0)),
+            "capacity lost",
+        );
+
+        // Safeguard: nudge toward quiet mode when low and unplugged, once per
+        // low-battery episode so it doesn't nag every tick.
+        if safeguards::suggest_quiet(cap, charging, self.current_profile) {
+            if !self.low_batt_warned {
+                self.low_batt_warned = true;
+                let _ = sender.output(OverviewOutput::Error(
+                    "Battery low, switch to Quiet mode to save power".to_owned(),
+                ));
+            }
+        } else if charging || cap > safeguards::LOW_BATTERY_PCT {
+            self.low_batt_warned = false;
         }
     }
 }

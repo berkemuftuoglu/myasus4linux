@@ -22,6 +22,11 @@ impl FanProfile {
             other => Err(BackendError::UnknownFanProfile(other)),
         }
     }
+
+    /// The kernel's numeric encoding for this profile, written by the daemon.
+    pub fn as_raw(self) -> u8 {
+        self as u8
+    }
 }
 
 pub fn read_profile() -> Result<FanProfile, BackendError> {
@@ -64,7 +69,7 @@ fn cpu_temp_in(thermal: &std::path::Path) -> Option<f64> {
 }
 
 pub fn set_profile(profile: FanProfile) -> Result<(), BackendError> {
-    super::daemon::set_fan_profile(profile as u8)
+    super::daemon::set_fan_profile(profile.as_raw())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -195,7 +200,8 @@ mod tests {
 
         let fans = scan_fans(dir.path());
         assert_eq!(fans.len(), 2);
-        // sorted by label: "CPU Fan" (labelled) then "asus" -> actually alpha: "CPU Fan" < "asus"
+        // sorted alphabetically by label, so the labelled "CPU Fan" sorts ahead
+        // of the chip-name fallback "asus"
         assert_eq!(
             fans[0],
             FanReading {
