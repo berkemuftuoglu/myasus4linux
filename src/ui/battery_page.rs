@@ -298,12 +298,6 @@ impl SimpleComponent for BatteryPage {
                         let _ = sender.output(BatteryOutput::Error(format!(
                             "charge limit applied but not saved: {e}"
                         )));
-                    } else if !settings::boot_service_installed() {
-                        if let Err(e) = settings::install_boot_service() {
-                            let _ = sender.output(BatteryOutput::Error(format!(
-                                "charge limit saved but won't persist across reboot: {e}"
-                            )));
-                        }
                     }
                 }
                 Err(e) => {

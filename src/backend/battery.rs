@@ -67,7 +67,9 @@ pub fn read_battery_info() -> Result<BatteryInfo, BackendError> {
         charge_full,
         sysfs::read_value::<f64>(detect::BAT_CHARGE_FULL_DESIGN),
     ) {
-        (Some(full), Ok(design)) if design > 0.0 => (full as f64 / design) * 100.0,
+        // New cells sometimes report charge_full above design; clamp so health
+        // never displays over 100%.
+        (Some(full), Ok(design)) if design > 0.0 => (full as f64 / design * 100.0).min(100.0),
         _ => 100.0,
     };
 

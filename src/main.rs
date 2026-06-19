@@ -19,9 +19,6 @@ mod ui;
 use relm4::RelmApp;
 use ui::app::App;
 
-/// Entry point for the myasus4linux application.
-///
-/// Loads `GResource`s, registers them, and launches the Relm4 application.
 fn main() {
     tracing_subscriber::fmt::init();
 

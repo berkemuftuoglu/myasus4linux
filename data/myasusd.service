@@ -6,6 +6,9 @@ Documentation=https://github.com/berkmuftuoglu/myasus4linux
 Type=dbus
 BusName=io.github.berkmuftuoglu.MyAsus4Linux.Helper
 ExecStart=/usr/local/libexec/myasusd
+# Root-owned /var/lib/myasus4linux for the persisted charge limit; systemd
+# creates it and adds it to the writable paths automatically.
+StateDirectory=myasus4linux
 # It only ever writes a handful of fixed /sys files; lock everything else down.
 ProtectHome=yes
 ProtectSystem=strict
@@ -16,3 +19,8 @@ ProtectControlGroups=yes
 RestrictNamespaces=yes
 RestrictRealtime=yes
 PrivateTmp=yes
+
+# Enabling the daemon (systemctl enable myasusd) makes systemd start it at boot,
+# where it re-applies the saved charge limit. It stays D-Bus activatable too.
+[Install]
+WantedBy=multi-user.target

@@ -22,6 +22,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .init();
 
+    // Re-apply the saved charge limit first, so a boot-time start restores it
+    // before anything else; then serve requests for the rest of the session.
+    helper::restore_charge_threshold();
+
     let connection = zbus::connection::Builder::system()?
         .name(BUS_NAME)?
         .serve_at(OBJECT_PATH, Helper::new())?

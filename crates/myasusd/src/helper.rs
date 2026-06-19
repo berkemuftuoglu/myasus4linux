@@ -8,6 +8,11 @@ const ACTION_CHARGE: &str = "io.github.berkmuftuoglu.MyAsus4Linux.Helper.SetChar
 const ACTION_FAN: &str = "io.github.berkmuftuoglu.MyAsus4Linux.Helper.SetPerformanceProfile";
 const ACTION_KBD: &str = "io.github.berkmuftuoglu.MyAsus4Linux.Helper.SetKeyboardBacklight";
 
+/// Root-owned state, provided by the unit's `StateDirectory=myasus4linux`. The
+/// charge limit is recorded here so it survives a reboot without a GUI or any
+/// `pkexec` install step.
+const CHARGE_STATE_FILE: &str = "/var/lib/myasus4linux/charge_threshold";
+
 #[derive(Debug, thiserror::Error)]
 enum HelperError {
     #[error("not authorized")]
@@ -101,7 +106,43 @@ async fn apply(
     std::fs::write(path, op.raw_value().to_string())
         .map_err(|source| HelperError::Write { path, source })?;
     tracing::info!("wrote {} to {path}", op.raw_value());
+    if let Op::ChargeThreshold(value) = op {
+        persist_charge_threshold(value);
+    }
     Ok(())
+}
+
+/// Record the charge limit for [`restore_charge_threshold`]. Best-effort: a
+/// failure to persist must never fail the write the user just authorised.
+fn persist_charge_threshold(value: u8) {
+    let dir = std::path::Path::new(CHARGE_STATE_FILE).parent();
+    let written = dir
+        .map_or(Ok(()), std::fs::create_dir_all)
+        .and_then(|()| std::fs::write(CHARGE_STATE_FILE, value.to_string()));
+    if let Err(e) = written {
+        tracing::warn!("could not persist charge threshold: {e}");
+    }
+}
+
+/// Re-apply the persisted charge limit at daemon startup, so it is restored on
+/// boot before any GUI runs. Silent when nothing has ever been saved.
+pub fn restore_charge_threshold() {
+    let Ok(raw) = std::fs::read_to_string(CHARGE_STATE_FILE) else {
+        return;
+    };
+    let Ok(value) = raw.trim().parse::<u8>() else {
+        tracing::warn!("ignoring malformed persisted charge threshold {raw:?}");
+        return;
+    };
+    let op = Op::ChargeThreshold(value);
+    if let Err(e) = op.validate() {
+        tracing::warn!("ignoring out-of-range persisted charge threshold: {e}");
+        return;
+    }
+    match std::fs::write(op.path(), op.raw_value().to_string()) {
+        Ok(()) => tracing::info!("restored charge threshold {value} on startup"),
+        Err(e) => tracing::warn!("could not restore charge threshold: {e}"),
+    }
 }
 
 /// Ask polkit whether the caller (identified by their bus message) may perform

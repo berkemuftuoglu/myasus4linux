@@ -35,15 +35,26 @@ pub fn set_percent(percent: u8) -> Result<(), BackendError> {
         path: "/sys/class/backlight".to_owned(),
         source: std::io::Error::new(std::io::ErrorKind::NotFound, "no backlight device"),
     })?;
-    let max: u32 = sysfs::read_value(dir.join("max_brightness").to_str().unwrap_or_default())?;
+    let max_path = dir.join("max_brightness");
+    let max: u32 = sysfs::read_value(non_utf8_guard(&max_path)?)?;
     let value = to_raw(percent, max).to_string();
-    let Some(path) = dir.join("brightness").to_str().map(ToOwned::to_owned) else {
-        return Ok(());
-    };
+    let brightness_path = dir.join("brightness");
     // The screen backlight is made writable for the active session by a logind
     // uaccess udev rule (data/99-myasus4linux-backlight.rules), the same way
     // GNOME dims the screen. No privilege escalation needed.
-    sysfs::write(&path, &value)
+    sysfs::write(non_utf8_guard(&brightness_path)?, &value)
+}
+
+/// sysfs paths are ASCII in practice; if one somehow isn't valid UTF-8 we
+/// surface it as an error rather than silently reporting success.
+fn non_utf8_guard(path: &std::path::Path) -> Result<&str, BackendError> {
+    path.to_str().ok_or_else(|| BackendError::SysfsWrite {
+        path: path.to_string_lossy().into_owned(),
+        source: std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "backlight path is not valid UTF-8",
+        ),
+    })
 }
 
 fn to_percent(cur: u32, max: u32) -> u8 {

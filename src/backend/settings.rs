@@ -23,7 +23,14 @@ impl Default for Settings {
 }
 
 fn settings_path() -> PathBuf {
-    let config = dirs_next::config_dir().unwrap_or_else(|| PathBuf::from("~/.config"));
+    // dirs_next resolves XDG_CONFIG_HOME / $HOME; only fall back if both are
+    // unset, and even then to a real $HOME/.config -- never a literal "~".
+    let config = dirs_next::config_dir().unwrap_or_else(|| {
+        std::env::var_os("HOME").map_or_else(
+            || PathBuf::from(".config"),
+            |home| PathBuf::from(home).join(".config"),
+        )
+    });
     config.join("myasus4linux").join("settings.toml")
 }
 
@@ -54,50 +61,9 @@ fn save_to(path: &std::path::Path, settings: &Settings) -> std::io::Result<()> {
     std::fs::write(path, content)
 }
 
-const SERVICE_NAME: &str = "myasus4linux-charge-limit.service";
-const SERVICE_PATH: &str = "/etc/systemd/system/myasus4linux-charge-limit.service";
-
-pub fn boot_service_installed() -> bool {
-    std::path::Path::new(SERVICE_PATH).exists()
-}
-
-/// Installs and enables the systemd service that restores the charge limit on boot.
-/// Uses pkexec so the user gets one password prompt.
-pub fn install_boot_service() -> Result<(), String> {
-    let service_content = include_str!("../../data/systemd/myasus4linux-charge-limit.service");
-
-    // Write service file via pkexec tee
-    let mut child = std::process::Command::new("pkexec")
-        .args(["tee", SERVICE_PATH])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::null())
-        .spawn()
-        .map_err(|e| e.to_string())?;
-
-    if let Some(ref mut stdin) = child.stdin {
-        use std::io::Write;
-        stdin
-            .write_all(service_content.as_bytes())
-            .map_err(|e| e.to_string())?;
-    }
-
-    let status = child.wait().map_err(|e| e.to_string())?;
-    if !status.success() {
-        return Err("failed to write service file".to_owned());
-    }
-
-    // Enable the service
-    let enable = std::process::Command::new("pkexec")
-        .args(["systemctl", "enable", SERVICE_NAME])
-        .status()
-        .map_err(|e| e.to_string())?;
-
-    if enable.success() {
-        Ok(())
-    } else {
-        Err("failed to enable service".to_owned())
-    }
-}
+// The charge limit is restored across reboots by the myasusd daemon, which
+// persists it on write and re-applies it at startup. No separate boot service
+// and no pkexec escalation -- see crates/myasusd/src/helper.rs.
 
 #[cfg(test)]
 mod tests {

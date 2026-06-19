@@ -1,9 +1,5 @@
 use super::sysfs;
 
-// ---------------------------------------------------------------------------
-// Sysfs path constants
-// ---------------------------------------------------------------------------
-
 pub const CHARGE_CONTROL_END_THRESHOLD: &str =
     "/sys/class/power_supply/BAT0/charge_control_end_threshold";
 pub const BAT_CAPACITY: &str = "/sys/class/power_supply/BAT0/capacity";
@@ -29,10 +25,6 @@ pub const KBD_BACKLIGHT: &str = "/sys/class/leds/asus::kbd_backlight/brightness"
 pub const DMI_PRODUCT_NAME: &str = "/sys/class/dmi/id/product_name";
 pub const DMI_BIOS_VERSION: &str = "/sys/class/dmi/id/bios_version";
 pub const DMI_BOARD_VENDOR: &str = "/sys/class/dmi/id/board_vendor";
-
-// ---------------------------------------------------------------------------
-// Hardware feature detection
-// ---------------------------------------------------------------------------
 
 /// On startup the application probes sysfs to determine which controls are
 /// available. Pages for unsupported features are hidden in the UI.
