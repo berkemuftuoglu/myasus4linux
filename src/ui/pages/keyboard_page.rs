@@ -1,7 +1,7 @@
 use adw::prelude::*;
 use relm4::prelude::*;
 
-use super::ledbar::LedBar;
+use crate::ui::widgets::ledbar::LedBar;
 use crate::backend::{brightness, error::BackendError, keyboard};
 use crate::palette;
 

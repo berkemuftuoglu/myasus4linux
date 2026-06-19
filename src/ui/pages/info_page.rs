@@ -1,10 +1,10 @@
 use adw::prelude::*;
 use relm4::prelude::*;
 
-use super::meter::Meter;
-use super::panel::Panel;
-use super::stat::Stat;
-use super::table::Table;
+use crate::ui::widgets::meter::Meter;
+use crate::ui::widgets::panel::Panel;
+use crate::ui::widgets::stat::Stat;
+use crate::ui::widgets::table::Table;
 use crate::backend::{detect, sysfs};
 
 /// Hardware and OS facts. Static identity is shown as a spec table; memory and

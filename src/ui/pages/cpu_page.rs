@@ -1,11 +1,11 @@
 use adw::prelude::*;
 use relm4::prelude::*;
 
-use super::chart::Chart;
-use super::gauge::{Accent, Gauge};
-use super::ledbar::LedBar;
-use super::panel::Panel;
-use super::stat::Stat;
+use crate::ui::widgets::chart::Chart;
+use crate::ui::widgets::gauge::{Accent, Gauge};
+use crate::ui::widgets::ledbar::LedBar;
+use crate::ui::widgets::panel::Panel;
+use crate::ui::widgets::stat::Stat;
 use crate::backend::{
     cpu::{CoreStat, CpuMonitor},
     fan,
@@ -131,7 +131,7 @@ impl SimpleComponent for CpuPage {
             -1,
         );
 
-        super::cores::build(&model.core_panel, &mut model.core_leds, &cores);
+        crate::ui::builders::cores::build(&model.core_panel, &mut model.core_leds, &cores);
         widgets.cores_slot.append(&model.core_panel.root);
 
         sender.input(CpuInput::Tick);
@@ -178,7 +178,7 @@ impl SimpleComponent for CpuPage {
                 self.freq_s.set(&format!("{freq:.1}"), "GHz, all cores");
                 self.freq_s.push(freq);
 
-                super::cores::update(&self.core_leds, &cores);
+                crate::ui::builders::cores::update(&self.core_leds, &cores);
                 self.core_panel.set_corner(&format!("avg {load:.0}%"));
 
                 if let Some(temp) = temp {

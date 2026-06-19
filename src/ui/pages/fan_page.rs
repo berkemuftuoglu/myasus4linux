@@ -1,10 +1,10 @@
 use adw::prelude::*;
 use relm4::prelude::*;
 
-use super::gauge::{Accent, Gauge};
-use super::meter::Meter;
-use super::panel::Panel;
-use super::stat::Stat;
+use crate::ui::widgets::gauge::{Accent, Gauge};
+use crate::ui::widgets::meter::Meter;
+use crate::ui::widgets::panel::Panel;
+use crate::ui::widgets::stat::Stat;
 use crate::backend::{
     error::BackendError,
     fan::{self, FanProfile},
@@ -184,7 +184,7 @@ impl SimpleComponent for FanPage {
         }
 
         let sensors = Panel::new("Thermal Sensors");
-        super::zones::build(&sensors, &mut model.zone_meters);
+        crate::ui::builders::zones::build(&sensors, &mut model.zone_meters);
         widgets.sensors_slot.append(&sensors.root);
 
         sender.input(FanInput::Tick);
@@ -229,7 +229,7 @@ impl SimpleComponent for FanPage {
                         stat.set(&reading.rpm.to_string(), "RPM");
                     }
                 }
-                super::zones::update(&self.zone_meters, &zones);
+                crate::ui::builders::zones::update(&self.zone_meters, &zones);
             }
             FanInput::SetProfile(profile) => {
                 if profile == self.current_profile {

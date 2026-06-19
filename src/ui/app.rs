@@ -1,12 +1,12 @@
 use adw::prelude::*;
 use relm4::prelude::*;
 
-use super::battery_page::BatteryPage;
-use super::cpu_page::CpuPage;
-use super::fan_page::FanPage;
-use super::info_page::InfoPage;
-use super::keyboard_page::KeyboardPage;
-use super::overview::Overview;
+use super::pages::battery_page::BatteryPage;
+use super::pages::cpu_page::CpuPage;
+use super::pages::fan_page::FanPage;
+use super::pages::info_page::InfoPage;
+use super::pages::keyboard_page::KeyboardPage;
+use super::pages::overview::Overview;
 use crate::backend::detect;
 
 /// Top-level application component.
@@ -94,14 +94,14 @@ impl SimpleComponent for App {
             Overview::builder()
                 .launch(features.clone())
                 .forward(sender.input_sender(), |msg| match msg {
-                    super::overview::OverviewOutput::Error(e) => AppInput::ShowToast(e),
+                    super::pages::overview::OverviewOutput::Error(e) => AppInput::ShowToast(e),
                 });
 
         let battery_page = features.battery.then(|| {
             BatteryPage::builder()
                 .launch(features.charge_limit)
                 .forward(sender.input_sender(), |msg| match msg {
-                    super::battery_page::BatteryOutput::Error(e) => AppInput::ShowToast(e),
+                    super::pages::battery_page::BatteryOutput::Error(e) => AppInput::ShowToast(e),
                 })
         });
 
@@ -109,7 +109,7 @@ impl SimpleComponent for App {
             FanPage::builder()
                 .launch(())
                 .forward(sender.input_sender(), |msg| match msg {
-                    super::fan_page::FanOutput::Error(e) => AppInput::ShowToast(e),
+                    super::pages::fan_page::FanOutput::Error(e) => AppInput::ShowToast(e),
                 })
         });
 
@@ -117,7 +117,7 @@ impl SimpleComponent for App {
             KeyboardPage::builder()
                 .launch(())
                 .forward(sender.input_sender(), |msg| match msg {
-                    super::keyboard_page::KeyboardOutput::Error(e) => AppInput::ShowToast(e),
+                    super::pages::keyboard_page::KeyboardOutput::Error(e) => AppInput::ShowToast(e),
                 })
         });
 

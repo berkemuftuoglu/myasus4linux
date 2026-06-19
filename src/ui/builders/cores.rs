@@ -3,8 +3,8 @@
 
 use gtk::prelude::*;
 
-use super::ledbar::LedBar;
-use super::panel::Panel;
+use crate::ui::widgets::ledbar::LedBar;
+use crate::ui::widgets::panel::Panel;
 use crate::backend::cpu::CoreStat;
 
 /// Fill `panel` with one LED bar per core and collect the bars for later updates.

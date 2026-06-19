@@ -1,13 +1,13 @@
 use adw::prelude::*;
 use relm4::prelude::*;
 
-use super::battery_cell::BatteryCell;
-use super::chart::Chart;
-use super::gauge::{Accent, Gauge};
-use super::ledbar::LedBar;
-use super::meter::Meter;
-use super::panel::Panel;
-use super::stat::Stat;
+use crate::ui::widgets::battery_cell::BatteryCell;
+use crate::ui::widgets::chart::Chart;
+use crate::ui::widgets::gauge::{Accent, Gauge};
+use crate::ui::widgets::ledbar::LedBar;
+use crate::ui::widgets::meter::Meter;
+use crate::ui::widgets::panel::Panel;
+use crate::ui::widgets::stat::Stat;
 use crate::backend::{
     battery,
     cpu::{CoreStat, CpuMonitor},
@@ -252,11 +252,11 @@ impl SimpleComponent for Overview {
         );
 
         model.core_panel.root.set_size_request(320, -1);
-        super::cores::build(&model.core_panel, &mut model.core_leds, &cores);
+        crate::ui::builders::cores::build(&model.core_panel, &mut model.core_leds, &cores);
         widgets.matrices.insert(&model.core_panel.root, -1);
 
         model.zone_panel.root.set_size_request(320, -1);
-        super::zones::build(&model.zone_panel, &mut model.zone_meters);
+        crate::ui::builders::zones::build(&model.zone_panel, &mut model.zone_meters);
         widgets.matrices.insert(&model.zone_panel.root, -1);
 
         widgets.mode_balanced.set_group(Some(&widgets.mode_quiet));
@@ -349,7 +349,7 @@ impl Overview {
         self.load_chart.push(load);
         self.freq_s.set(&format!("{freq:.1}"), "GHz, all cores");
         self.freq_s.push(freq);
-        super::cores::update(&self.core_leds, &cores);
+        crate::ui::builders::cores::update(&self.core_leds, &cores);
         self.core_panel.set_corner(&format!("avg {load:.0}%"));
 
         if let Some(t) = cpu_temp {
@@ -357,7 +357,7 @@ impl Overview {
             self.temp_chart.push(t);
         }
 
-        super::zones::update(&self.zone_meters, &zones);
+        crate::ui::builders::zones::update(&self.zone_meters, &zones);
         if let Some(hottest) = zones.iter().map(|z| z.celsius).reduce(f64::max) {
             self.zone_panel.set_corner(&format!("max {hottest:.0}°C"));
             // Safeguard: a critically hot sensor forces maximum cooling,
