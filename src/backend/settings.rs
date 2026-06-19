@@ -36,7 +36,7 @@ pub fn save(settings: &Settings) -> std::io::Result<()> {
 }
 
 /// Read settings from a specific file, falling back to defaults when it is
-/// missing or unparseable. Split out from [`load`] so it can be tested without
+/// missing or unparsable. Split out from [`load`] so it can be tested without
 /// touching the real config directory.
 fn load_from(path: &std::path::Path) -> Settings {
     std::fs::read_to_string(path)

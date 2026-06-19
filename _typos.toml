@@ -3,6 +3,7 @@
 extend-exclude = ["*.svg", "Cargo.lock"]
 
 [default.extend-words]
-# sysfs / hardware jargon that are not typos
+# sysfs / hardware jargon and library names that are not typos
 acpitz = "acpitz"
 iwlwifi = "iwlwifi"
+relm = "relm"

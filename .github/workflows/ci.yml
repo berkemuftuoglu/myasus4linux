@@ -109,7 +109,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: pipx install meson
-      - run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build desktop-file-utils
       - run: meson setup build -Dprofile=default
       - run: meson compile -C build
       - run: meson install -C build --destdir "$PWD/staging"
