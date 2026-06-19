@@ -38,6 +38,45 @@ TUF). Controls your model does not expose are detected at startup and hidden.
 The charge limit persists across reboots: the `myasusd` daemon records it on
 every write and re-applies it at startup, before any GUI runs.
 
+## Architecture
+
+The GUI runs as you (never root) and reads hardware directly. The one privileged
+writer is **`myasusd`**, a small root D-Bus daemon gated by polkit.
+**`myasus-core`** is the contract both sides validate against, so the GUI and the
+daemon can never disagree on a path or a range.
+
+```mermaid
+flowchart TB
+    subgraph user["User session — never root"]
+        gui["myasus4linux<br/>GTK4 / Relm4 dashboard"]
+        be["backend<br/>pure Rust, sysfs reads"]
+        gui --- be
+    end
+
+    core["myasus-core<br/>shared contract:<br/>fixed paths, ranges, validation"]
+
+    subgraph sysroot["System — root"]
+        daemon["myasusd<br/>D-Bus system daemon<br/>the only privileged writer"]
+        polkit["polkit"]
+        state[("/var/lib/myasus4linux<br/>persisted charge limit")]
+    end
+
+    hw[("sysfs / procfs<br/>power_supply, asus-nb-wmi,<br/>leds, thermal, hwmon")]
+
+    be -- "read (off the UI thread)" --> hw
+    gui == "set charge / fan / keyboard<br/>system D-Bus" ==> daemon
+    daemon -- "authorize" --> polkit
+    daemon -- "validate" --> core
+    be -. "validate before send" .-> core
+    daemon == "write" ==> hw
+    daemon --- state
+    state -. "restore on boot" .-> daemon
+    gui -. "screen brightness — direct, via uaccess udev rule" .-> hw
+```
+
+Thick arrows are the privileged write path; thin and dotted arrows are the
+unprivileged reads and the screen-backlight exception.
+
 ## How privileged controls work
 
 Reading hardware is unprivileged — the GUI never runs as root. Writes (fan
