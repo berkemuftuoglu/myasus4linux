@@ -485,6 +485,17 @@ mod tests {
     }
 
     #[test]
+    fn battery_dir_falls_back_to_bat_named_when_no_control() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        // No cell exposes the charge control (tier 1 empty). A BAT*-named cell
+        // wins tier 2 even over a larger differently-named one.
+        mk_battery(root, "CMB0", Some(90_000_000), None);
+        mk_battery(root, "BAT0", Some(50_000_000), None);
+        assert_eq!(battery_dir(root), Some(root.join("BAT0")));
+    }
+
+    #[test]
     fn battery_dir_none_without_a_battery() {
         let dir = tempfile::tempdir().unwrap();
         // An AC adapter is present but no battery (desktop).
@@ -552,6 +563,8 @@ mod tests {
         assert_eq!(profile_from_token("low-power"), Some(2)); // collapses into quiet
         assert_eq!(profile_from_token(" performance\n"), Some(1)); // trims
         assert_eq!(profile_from_token("turbo"), None);
+        assert_eq!(profile_tokens(0), &["balanced"]);
+        assert_eq!(profile_tokens(1), &["performance"]);
         assert_eq!(profile_tokens(2), &["quiet", "low-power"]);
         assert!(profile_tokens(9).is_empty());
     }
@@ -583,6 +596,32 @@ mod tests {
         // CPU temp prefers x86_pkg_temp over acpitz regardless of order.
         assert_eq!(cpu_temp(root), Some(61.0));
         assert_eq!(read_zones(root).len(), 2);
+    }
+
+    #[test]
+    fn read_zones_skips_missing_dir_and_unreadable_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        // A directory that doesn't exist reads as no zones.
+        assert!(read_zones(&root.join("missing")).is_empty());
+        // A non-zone sibling, a zone with no temp, and a zone with a garbage
+        // temp are skipped; a zone with a valid temp but no `type` file falls
+        // back to the "Sensor" label.
+        std::fs::create_dir_all(root.join("cooling_device0")).unwrap();
+        let no_temp = root.join("thermal_zone7");
+        std::fs::create_dir_all(&no_temp).unwrap();
+        std::fs::write(no_temp.join("type"), "acpitz\n").unwrap();
+        let bad_temp = root.join("thermal_zone8");
+        std::fs::create_dir_all(&bad_temp).unwrap();
+        std::fs::write(bad_temp.join("temp"), "nope\n").unwrap();
+        let no_type = root.join("thermal_zone6");
+        std::fs::create_dir_all(&no_type).unwrap();
+        std::fs::write(no_type.join("temp"), "50000\n").unwrap();
+        mk_zone(root, "thermal_zone9", "x86_pkg_temp", "60000");
+        let zones = read_zones(root);
+        assert_eq!(zones.len(), 2);
+        assert!(zones.iter().any(|z| z.kind == "Sensor"));
+        assert!(zones.iter().any(|z| z.kind == "x86_pkg_temp"));
     }
 
     #[test]
@@ -620,10 +659,30 @@ mod tests {
     }
 
     #[test]
-    fn state_ignores_unknown_keys_and_unparseable_values() {
-        let s = DaemonState::parse("charge_threshold=70\nfuture_key=x\nfan_profile=oops\n");
+    fn state_ignores_unknown_keys_and_unparsable_values() {
+        // a line with no '=' is skipped, as are unknown keys and values that
+        // don't parse into the field's type.
+        let s = DaemonState::parse(
+            "charge_threshold=70\nnoequalsline\nfuture_key=x\nfan_profile=oops\n",
+        );
         assert_eq!(s.charge_threshold, Some(70));
         assert_eq!(s.fan_profile, None);
+    }
+
+    #[test]
+    fn state_set_records_each_op() {
+        let mut s = DaemonState::default();
+        s.set(Op::ChargeThreshold(75));
+        s.set(Op::FanProfile(1));
+        s.set(Op::KeyboardBacklight(3));
+        assert_eq!(
+            s,
+            DaemonState {
+                charge_threshold: Some(75),
+                fan_profile: Some(1),
+                kbd_backlight: Some(3),
+            }
+        );
     }
 
     #[test]

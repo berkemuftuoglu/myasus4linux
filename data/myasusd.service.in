@@ -20,7 +20,7 @@ StateDirectory=myasus4linux
 # INVARIANT: every path any Op can resolve to must be under one of these roots,
 # or the write hits EROFS under ProtectSystem=strict. asus-nb-wmi covers the WMI
 # fan node; firmware/acpi covers the platform_profile fallback used on non-ROG
-# laptops without the WMI node; power_supply covers any BATx + the charge limit;
+# laptops without the WMI node; power_supply covers any battery + the charge limit;
 # leds covers the keyboard backlight.
 ProtectHome=yes
 ProtectSystem=strict
