@@ -75,9 +75,71 @@ impl<T: Copy + PartialEq> DebouncedCommit<T> {
     }
 }
 
+/// Optimistic discrete choice (the profile toggles): show the picked value at
+/// once, roll back if the write fails, and don't let the poll stomp it while a
+/// write is in flight. The same state machine `Overview` and `FanPage` carried.
+pub struct OptimisticChoice<T> {
+    current: T,
+    pending_prev: Option<T>,
+}
+
+impl<T: Copy + PartialEq> OptimisticChoice<T> {
+    pub fn new(initial: T) -> Self {
+        Self {
+            current: initial,
+            pending_prev: None,
+        }
+    }
+
+    pub fn current(&self) -> T {
+        self.current
+    }
+
+    /// User picked `p`. Returns `Some(p)` to write if it actually changed,
+    /// applying it optimistically and marking a write pending.
+    pub fn pick(&mut self, p: T) -> Option<T> {
+        if p == self.current {
+            return None;
+        }
+        self.pending_prev = Some(self.current);
+        self.current = p;
+        Some(p)
+    }
+
+    /// The write finished; roll back to the previous value on failure.
+    pub fn written(&mut self, ok: bool) {
+        if let Some(prev) = self.pending_prev.take() {
+            if !ok {
+                self.current = prev;
+            }
+        }
+    }
+
+    /// Adopt a polled value unless our own write is in flight.
+    pub fn poll(&mut self, p: T) {
+        if self.pending_prev.is_none() {
+            self.current = p;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn choice_optimistic_pick_and_rollback() {
+        let mut c = OptimisticChoice::new(0u8);
+        assert_eq!(c.pick(0), None); // unchanged
+        assert_eq!(c.pick(1), Some(1)); // optimistic
+        assert_eq!(c.current(), 1);
+        c.poll(2); // stale poll mid-write -> ignored
+        assert_eq!(c.current(), 1);
+        c.written(false); // write failed -> roll back
+        assert_eq!(c.current(), 0);
+        c.poll(2); // now allowed
+        assert_eq!(c.current(), 2);
+    }
 
     #[test]
     fn supersede_drops_the_older_commit() {

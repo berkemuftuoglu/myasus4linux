@@ -12,10 +12,7 @@ use crate::backend::{
 };
 
 pub struct FanPage {
-    current_profile: FanProfile,
-    // True while our own profile write is in flight, so a stale background read
-    // doesn't stomp the optimistic value and bounce the toggles.
-    mode_pending: bool,
+    profile: crate::ui::commit::OptimisticChoice<FanProfile>,
     temp_g: Gauge,
     fan_stats: Vec<(String, Stat)>,
     zone_meters: Vec<(String, Meter)>,
@@ -26,10 +23,7 @@ pub enum FanInput {
     Tick,
     Loaded(Box<FanSample>),
     SetProfile(FanProfile),
-    ProfileWritten {
-        result: Result<(), BackendError>,
-        prev: FanProfile,
-    },
+    ProfileWritten(Result<(), BackendError>),
     ReadError(String),
 }
 
@@ -93,7 +87,7 @@ impl SimpleComponent for FanPage {
                             gtk::ToggleButton {
                                 set_label: "Quiet",
                                 #[watch]
-                                set_active: model.current_profile == FanProfile::Quiet,
+                                set_active: model.profile.current() == FanProfile::Quiet,
                                 connect_clicked[sender] => move |b| if b.is_active() {
                                     sender.input(FanInput::SetProfile(FanProfile::Quiet));
                                 },
@@ -102,7 +96,7 @@ impl SimpleComponent for FanPage {
                             gtk::ToggleButton {
                                 set_label: "Balanced",
                                 #[watch]
-                                set_active: model.current_profile == FanProfile::Balanced,
+                                set_active: model.profile.current() == FanProfile::Balanced,
                                 connect_clicked[sender] => move |b| if b.is_active() {
                                     sender.input(FanInput::SetProfile(FanProfile::Balanced));
                                 },
@@ -111,7 +105,7 @@ impl SimpleComponent for FanPage {
                             gtk::ToggleButton {
                                 set_label: "Performance",
                                 #[watch]
-                                set_active: model.current_profile == FanProfile::Performance,
+                                set_active: model.profile.current() == FanProfile::Performance,
                                 connect_clicked[sender] => move |b| if b.is_active() {
                                     sender.input(FanInput::SetProfile(FanProfile::Performance));
                                 },
@@ -148,8 +142,7 @@ impl SimpleComponent for FanPage {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let mut model = FanPage {
-            current_profile: FanProfile::Balanced,
-            mode_pending: false,
+            profile: crate::ui::commit::OptimisticChoice::new(FanProfile::Balanced),
             temp_g: Gauge::new(150, Accent::ByValue),
             fan_stats: Vec::new(),
             zone_meters: Vec::new(),
@@ -212,9 +205,7 @@ impl SimpleComponent for FanPage {
                     fans,
                     zones,
                 } = *sample;
-                if !self.mode_pending {
-                    self.current_profile = profile;
-                }
+                self.profile.poll(profile);
                 if let Some(t) = temp {
                     self.temp_g
                         .set(t / 100.0, &format!("{t:.0}°"), "CPU package");
@@ -227,27 +218,25 @@ impl SimpleComponent for FanPage {
                 crate::ui::builders::zones::update(&self.zone_meters, &zones);
             }
             FanInput::SetProfile(profile) => {
-                if profile == self.current_profile {
-                    return;
+                if let Some(p) = self.profile.pick(profile) {
+                    crate::ui::offload(sender.input_sender(), move || {
+                        FanInput::ProfileWritten(fan::set_profile(p))
+                    });
                 }
-                let prev = self.current_profile;
-                self.current_profile = profile;
-                self.mode_pending = true;
-                crate::ui::offload(sender.input_sender(), move || FanInput::ProfileWritten {
-                    result: fan::set_profile(profile),
-                    prev,
-                });
             }
-            FanInput::ProfileWritten { result, prev } => {
-                self.mode_pending = false;
-                if let Err(e) = result {
-                    self.current_profile = prev;
-                    let _ = sender.output(crate::ui::PageMsg::Error(e.to_string()));
-                } else {
-                    let _ = sender.output(crate::ui::PageMsg::Notice(format!(
-                        "{} mode applied",
-                        self.current_profile.label()
-                    )));
+            FanInput::ProfileWritten(result) => {
+                self.profile.written(result.is_ok());
+                match result {
+                    // A discrete control, so confirm it (unlike the sliders).
+                    Ok(()) => {
+                        let _ = sender.output(crate::ui::PageMsg::Notice(format!(
+                            "{} mode applied",
+                            self.profile.current().label()
+                        )));
+                    }
+                    Err(e) => {
+                        let _ = sender.output(crate::ui::PageMsg::Error(e.to_string()));
+                    }
                 }
             }
             FanInput::ReadError(msg) => {

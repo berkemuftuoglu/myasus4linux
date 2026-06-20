@@ -19,19 +19,12 @@ use crate::backend::{
 use crate::format::duration_hm;
 use crate::ui::palette::{self, Rgb};
 
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "independent UI capability and transient-state flags; clearer as named bools than packed"
-)]
 pub struct Overview {
     monitor: Option<CpuMonitor>,
     has_battery: bool,
     low_batt_warned: bool,
     thermal_warned: bool,
-    // True while one of our own profile writes is in flight, so a stale
-    // background read doesn't stomp the optimistic value.
-    mode_pending: bool,
-    current_profile: FanProfile,
+    profile: crate::ui::commit::OptimisticChoice<FanProfile>,
     load_g: Gauge,
     temp_g: Gauge,
     batt_cell: BatteryCell,
@@ -52,10 +45,7 @@ pub enum OverviewInput {
     Tick,
     Sampled(Box<OverviewSample>),
     SetMode(FanProfile),
-    ModeWritten {
-        result: Result<(), BackendError>,
-        prev: FanProfile,
-    },
+    ModeWritten(Result<(), BackendError>),
 }
 
 /// Plain data carried back from the worker thread; no GTK, no borrowed state.
@@ -156,7 +146,7 @@ impl SimpleComponent for Overview {
                         gtk::ToggleButton {
                             set_label: "Quiet",
                             #[watch]
-                            set_active: model.current_profile == FanProfile::Quiet,
+                            set_active: model.profile.current() == FanProfile::Quiet,
                             connect_clicked[sender] => move |b| if b.is_active() {
                                 sender.input(OverviewInput::SetMode(FanProfile::Quiet));
                             },
@@ -165,7 +155,7 @@ impl SimpleComponent for Overview {
                         gtk::ToggleButton {
                             set_label: "Balanced",
                             #[watch]
-                            set_active: model.current_profile == FanProfile::Balanced,
+                            set_active: model.profile.current() == FanProfile::Balanced,
                             connect_clicked[sender] => move |b| if b.is_active() {
                                 sender.input(OverviewInput::SetMode(FanProfile::Balanced));
                             },
@@ -174,7 +164,7 @@ impl SimpleComponent for Overview {
                         gtk::ToggleButton {
                             set_label: "Performance",
                             #[watch]
-                            set_active: model.current_profile == FanProfile::Performance,
+                            set_active: model.profile.current() == FanProfile::Performance,
                             connect_clicked[sender] => move |b| if b.is_active() {
                                 sender.input(OverviewInput::SetMode(FanProfile::Performance));
                             },
@@ -198,8 +188,7 @@ impl SimpleComponent for Overview {
             has_battery: features.battery,
             low_batt_warned: false,
             thermal_warned: false,
-            mode_pending: false,
-            current_profile: FanProfile::Balanced,
+            profile: crate::ui::commit::OptimisticChoice::new(FanProfile::Balanced),
             load_g: Gauge::new(168, Accent::ByValue),
             temp_g: Gauge::new(168, Accent::ByValue),
             batt_cell: BatteryCell::new(168),
@@ -291,21 +280,15 @@ impl SimpleComponent for Overview {
             }
             OverviewInput::Sampled(sample) => self.show_sample(*sample, &sender),
             OverviewInput::SetMode(profile) => {
-                if profile == self.current_profile {
-                    return;
+                if let Some(p) = self.profile.pick(profile) {
+                    crate::ui::offload(sender.input_sender(), move || {
+                        OverviewInput::ModeWritten(fan::set_profile(p))
+                    });
                 }
-                let prev = self.current_profile;
-                self.current_profile = profile;
-                self.mode_pending = true;
-                crate::ui::offload(sender.input_sender(), move || OverviewInput::ModeWritten {
-                    result: fan::set_profile(profile),
-                    prev,
-                });
             }
-            OverviewInput::ModeWritten { result, prev } => {
-                self.mode_pending = false;
+            OverviewInput::ModeWritten(result) => {
+                self.profile.written(result.is_ok());
                 if let Err(e) = result {
-                    self.current_profile = prev;
                     let _ = sender.output(crate::ui::PageMsg::Error(e.to_string()));
                 }
             }
@@ -327,13 +310,10 @@ impl Overview {
         } = sample;
         self.monitor = Some(monitor);
         // Adopt the freshly-read profile so the safeguards reason about the
-        // current mode -- but not while one of our own writes is still in flight,
-        // since a stale read would stomp the optimistic value and bounce the
-        // toggles. On a read error keep the last known mode.
+        // current mode; poll() ignores it while our own write is in flight, so a
+        // stale read can't stomp the optimistic value and bounce the toggles.
         if let Some(profile) = profile {
-            if !self.mode_pending {
-                self.current_profile = profile;
-            }
+            self.profile.poll(profile);
         }
 
         let n = cores.len().max(1) as f64;
@@ -360,7 +340,7 @@ impl Overview {
             // just tell the user, once per hot episode (reset once it cools), so
             // there aren't two loops fighting over the same sysfs node. Name the
             // zone so the gauge's CPU temp not matching doesn't look like a glitch.
-            if safeguards::thermal_override(hot.celsius, self.current_profile).is_some() {
+            if safeguards::thermal_override(hot.celsius, self.profile.current()).is_some() {
                 if !self.thermal_warned {
                     self.thermal_warned = true;
                     let _ = sender.output(crate::ui::PageMsg::Notice(format!(
@@ -411,7 +391,7 @@ impl Overview {
         // state over "charging" -- a full battery on AC isn't charging but also
         // isn't running down, so it shouldn't trigger the nudge.
         let plugged = b.on_ac.unwrap_or(charging);
-        if safeguards::suggest_quiet(cap, plugged, self.current_profile) {
+        if safeguards::suggest_quiet(cap, plugged, self.profile.current()) {
             if !self.low_batt_warned {
                 self.low_batt_warned = true;
                 let _ = sender.output(crate::ui::PageMsg::Notice(
