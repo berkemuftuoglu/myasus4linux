@@ -1,13 +1,13 @@
 use adw::prelude::*;
 use relm4::prelude::*;
 
+use crate::backend::{battery, error::BackendError};
+use crate::format::duration_hm;
+use crate::ui::palette::Rgb;
 use crate::ui::widgets::battery_cell::BatteryCell;
 use crate::ui::widgets::gauge::{Accent, Gauge};
 use crate::ui::widgets::panel::Panel;
 use crate::ui::widgets::stat::Stat;
-use crate::backend::{battery, error::BackendError};
-use crate::format::duration_hm;
-use crate::ui::palette::Rgb;
 
 pub struct BatteryPage {
     charge: crate::ui::commit::DebouncedCommit<u8>,

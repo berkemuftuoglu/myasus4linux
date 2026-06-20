@@ -48,7 +48,15 @@ impl Gauge {
         let anim = Animator::new(area.clone(), 0.18);
         let (a, d_big, d_sub) = (anim.clone(), Rc::clone(&big), Rc::clone(&sub));
         area.set_draw_func(move |_, cr, w, h| {
-            draw_gauge(cr, w, h, a.shown(), accent, &d_big.borrow(), &d_sub.borrow());
+            draw_gauge(
+                cr,
+                w,
+                h,
+                a.shown(),
+                accent,
+                &d_big.borrow(),
+                &d_sub.borrow(),
+            );
         });
 
         Self {

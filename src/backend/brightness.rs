@@ -12,7 +12,11 @@ use super::sysfs;
 fn backlight_dir() -> Option<PathBuf> {
     const PREFERRED: [&str; 4] = ["intel_backlight", "amdgpu_bl1", "amdgpu_bl0", "acpi_video0"];
     let root = std::path::Path::new("/sys/class/backlight");
-    let mut devices: Vec<PathBuf> = std::fs::read_dir(root).ok()?.flatten().map(|e| e.path()).collect();
+    let mut devices: Vec<PathBuf> = std::fs::read_dir(root)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .collect();
     devices.sort();
     for name in PREFERRED {
         if let Some(p) = devices

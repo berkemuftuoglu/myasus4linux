@@ -1,9 +1,9 @@
 use adw::prelude::*;
 use relm4::prelude::*;
 
-use crate::ui::widgets::ledbar::LedBar;
 use crate::backend::{brightness, error::BackendError, keyboard};
 use crate::ui::palette;
+use crate::ui::widgets::ledbar::LedBar;
 
 pub struct KeyboardPage {
     brightness: crate::ui::commit::OptimisticChoice<u8>,
@@ -205,7 +205,9 @@ impl SimpleComponent for KeyboardPage {
         // Poll so external changes (the Fn backlight key, screen auto-dim, other
         // tools) are reflected -- those write sysfs directly and emit no D-Bus
         // signal, so a poll is the only way to catch them.
-        crate::ui::poll(&root, sender.input_sender(), || KeyboardInput::LoadBrightness);
+        crate::ui::poll(&root, sender.input_sender(), || {
+            KeyboardInput::LoadBrightness
+        });
         crate::ui::poll(&root, sender.input_sender(), || KeyboardInput::LoadScreen);
         ComponentParts { model, widgets }
     }

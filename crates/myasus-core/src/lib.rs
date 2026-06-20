@@ -86,7 +86,6 @@ impl Op {
             _ => Ok(()),
         }
     }
-
 }
 
 /// Resolve the main battery's sysfs directory under `root` (normally
@@ -380,7 +379,8 @@ pub fn profile_tokens(value: u8) -> &'static [&'static str] {
 }
 
 fn is_battery(dir: &Path) -> bool {
-    std::fs::read_to_string(dir.join("type")).is_ok_and(|t| t.trim().eq_ignore_ascii_case("Battery"))
+    std::fs::read_to_string(dir.join("type"))
+        .is_ok_and(|t| t.trim().eq_ignore_ascii_case("Battery"))
 }
 
 fn sysname_starts_with_bat(dir: &Path) -> bool {
@@ -398,11 +398,18 @@ fn design_capacity(dir: &Path) -> u64 {
 }
 
 fn read_u64(dir: &Path, attr: &str) -> Option<u64> {
-    std::fs::read_to_string(dir.join(attr)).ok()?.trim().parse().ok()
+    std::fs::read_to_string(dir.join(attr))
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
 }
 
 fn largest_capacity(candidates: &[PathBuf]) -> Option<PathBuf> {
-    candidates.iter().max_by_key(|p| design_capacity(p)).cloned()
+    candidates
+        .iter()
+        .max_by_key(|p| design_capacity(p))
+        .cloned()
 }
 
 #[cfg(test)]

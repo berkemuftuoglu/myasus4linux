@@ -37,7 +37,15 @@ impl BatteryCell {
             Rc::clone(&sub),
         );
         area.set_draw_func(move |_, cr, w, h| {
-            draw(cr, w, h, a.shown(), d_chg.get(), &d_big.borrow(), &d_sub.borrow());
+            draw(
+                cr,
+                w,
+                h,
+                a.shown(),
+                d_chg.get(),
+                &d_big.borrow(),
+                &d_sub.borrow(),
+            );
         });
 
         Self {

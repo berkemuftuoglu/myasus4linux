@@ -193,7 +193,10 @@ fn resolve_write(op: Op) -> Result<(PathBuf, String), HelperError> {
 /// advertised choices).
 fn fan_profile_write(value: u8) -> Result<(PathBuf, String), HelperError> {
     if Path::new(myasus_core::FAN_PROFILE_PATH).exists() {
-        return Ok((PathBuf::from(myasus_core::FAN_PROFILE_PATH), value.to_string()));
+        return Ok((
+            PathBuf::from(myasus_core::FAN_PROFILE_PATH),
+            value.to_string(),
+        ));
     }
     if !Path::new(myasus_core::PLATFORM_PROFILE_PATH).exists() {
         return Err(HelperError::NoFanControl);
@@ -206,7 +209,10 @@ fn fan_profile_write(value: u8) -> Result<(PathBuf, String), HelperError> {
         .copied()
         .find(|t| platform_profile_supports(t))
         .ok_or(HelperError::NoFanControl)?;
-    Ok((PathBuf::from(myasus_core::PLATFORM_PROFILE_PATH), token.to_owned()))
+    Ok((
+        PathBuf::from(myasus_core::PLATFORM_PROFILE_PATH),
+        token.to_owned(),
+    ))
 }
 
 fn platform_profile_supports(token: &str) -> bool {
@@ -226,7 +232,9 @@ fn current_profile_raw() -> Option<u8> {
     if let Ok(s) = std::fs::read_to_string(myasus_core::FAN_PROFILE_PATH) {
         return s.trim().parse().ok();
     }
-    myasus_core::profile_from_token(&std::fs::read_to_string(myasus_core::PLATFORM_PROFILE_PATH).ok()?)
+    myasus_core::profile_from_token(
+        &std::fs::read_to_string(myasus_core::PLATFORM_PROFILE_PATH).ok()?,
+    )
 }
 
 /// Headless thermal protection: poll the sensors and force maximum cooling when
@@ -242,18 +250,21 @@ pub fn spawn_thermal_guard() {
         let mut overridden: Option<u8> = None;
         loop {
             tick.tick().await;
-            let Some((max, cur)) = tokio::task::spawn_blocking(|| Some((thermal_max_celsius()?, current_profile_raw()?)))
-                .await
-                .ok()
-                .flatten()
-            else {
+            let Some((max, cur)) = tokio::task::spawn_blocking(|| {
+                Some((thermal_max_celsius()?, current_profile_raw()?))
+            })
+            .await
+            .ok()
+            .flatten() else {
                 continue;
             };
             let (action, next) = myasus_core::guard_step(max, cur, overridden);
             overridden = next;
             match action {
                 myasus_core::ThermalAction::Force => {
-                    tracing::warn!("thermal guard: {max:.0}C over limit, forcing performance (was {cur})");
+                    tracing::warn!(
+                        "thermal guard: {max:.0}C over limit, forcing performance (was {cur})"
+                    );
                     if !write_profile(PERFORMANCE).await {
                         overridden = None; // write failed -- don't claim we own the override
                     }
@@ -262,7 +273,9 @@ pub fn spawn_thermal_guard() {
                     // Restore the user's persisted intent, falling back to what we
                     // snapshotted at override time if nothing was ever saved.
                     let target = load_state().fan_profile.unwrap_or(snapshot);
-                    tracing::info!("thermal guard: cooled to {max:.0}C, restoring profile {target}");
+                    tracing::info!(
+                        "thermal guard: cooled to {max:.0}C, restoring profile {target}"
+                    );
                     write_profile(target).await;
                 }
                 myasus_core::ThermalAction::None => {}

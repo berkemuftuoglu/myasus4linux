@@ -2,9 +2,9 @@
 
 use gtk::prelude::*;
 
+use crate::backend::thermal::{self, ThermalZone};
 use crate::ui::widgets::meter::Meter;
 use crate::ui::widgets::panel::Panel;
-use crate::backend::thermal::{self, ThermalZone};
 
 /// Build one meter per thermal zone (sorted by label), append them to `panel`,
 /// and pair each with its label so later reads can match by name.

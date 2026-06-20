@@ -18,7 +18,11 @@ pub fn battery_dir() -> Option<PathBuf> {
 }
 
 fn read_attr<T: std::str::FromStr>(dir: &Path, attr: &str) -> Option<T> {
-    std::fs::read_to_string(dir.join(attr)).ok()?.trim().parse().ok()
+    std::fs::read_to_string(dir.join(attr))
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
 }
 
 const HEALTH_GOOD: f64 = 80.0;

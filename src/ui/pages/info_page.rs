@@ -1,11 +1,11 @@
 use adw::prelude::*;
 use relm4::prelude::*;
 
+use crate::backend::{detect, sysfs};
 use crate::ui::widgets::meter::Meter;
 use crate::ui::widgets::panel::Panel;
 use crate::ui::widgets::stat::Stat;
 use crate::ui::widgets::table::Table;
-use crate::backend::{detect, sysfs};
 
 /// Hardware and OS facts. Static identity is shown as a spec table; memory and
 /// uptime update live in panels above it.

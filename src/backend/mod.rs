@@ -1,10 +1,10 @@
 pub mod battery;
 pub mod brightness;
 pub mod cpu;
-pub mod ipc;
 pub mod detect;
 pub mod error;
 pub mod fan;
+pub mod ipc;
 pub mod keyboard;
 pub mod safeguards;
 pub mod sysfs;

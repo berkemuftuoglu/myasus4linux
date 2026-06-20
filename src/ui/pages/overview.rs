@@ -1,13 +1,6 @@
 use adw::prelude::*;
 use relm4::prelude::*;
 
-use crate::ui::widgets::battery_cell::BatteryCell;
-use crate::ui::widgets::chart::Chart;
-use crate::ui::widgets::gauge::{Accent, Gauge};
-use crate::ui::widgets::ledbar::LedBar;
-use crate::ui::widgets::meter::Meter;
-use crate::ui::widgets::panel::Panel;
-use crate::ui::widgets::stat::Stat;
 use crate::backend::{
     battery,
     cpu::{CoreStat, CpuMonitor},
@@ -18,6 +11,13 @@ use crate::backend::{
 };
 use crate::format::duration_hm;
 use crate::ui::palette::{self, Rgb};
+use crate::ui::widgets::battery_cell::BatteryCell;
+use crate::ui::widgets::chart::Chart;
+use crate::ui::widgets::gauge::{Accent, Gauge};
+use crate::ui::widgets::ledbar::LedBar;
+use crate::ui::widgets::meter::Meter;
+use crate::ui::widgets::panel::Panel;
+use crate::ui::widgets::stat::Stat;
 
 pub struct Overview {
     monitor: Option<CpuMonitor>,
@@ -339,7 +339,8 @@ impl Overview {
 
         crate::ui::builders::zones::update(&self.zone_meters, &zones);
         if let Some(hot) = zones.iter().max_by(|a, b| a.celsius.total_cmp(&b.celsius)) {
-            self.zone_panel.set_corner(&format!("max {:.0}°C", hot.celsius));
+            self.zone_panel
+                .set_corner(&format!("max {:.0}°C", hot.celsius));
             // Safeguard feedback: the daemon's thermal guard forces maximum
             // cooling headless and restores the profile when it cools; here we
             // just tell the user, once per hot episode (reset once it cools), so

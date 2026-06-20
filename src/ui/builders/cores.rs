@@ -3,9 +3,9 @@
 
 use gtk::prelude::*;
 
+use crate::backend::cpu::CoreStat;
 use crate::ui::widgets::ledbar::LedBar;
 use crate::ui::widgets::panel::Panel;
-use crate::backend::cpu::CoreStat;
 
 /// Fill `panel` with one LED bar per core and collect the bars for later updates.
 pub fn build(panel: &Panel, leds: &mut Vec<LedBar>, cores: &[CoreStat]) {

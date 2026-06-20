@@ -1,15 +1,15 @@
 use adw::prelude::*;
 use relm4::prelude::*;
 
-use crate::ui::widgets::gauge::{Accent, Gauge};
-use crate::ui::widgets::meter::Meter;
-use crate::ui::widgets::panel::Panel;
-use crate::ui::widgets::stat::Stat;
 use crate::backend::{
     error::BackendError,
     fan::{self, FanProfile},
     thermal,
 };
+use crate::ui::widgets::gauge::{Accent, Gauge};
+use crate::ui::widgets::meter::Meter;
+use crate::ui::widgets::panel::Panel;
+use crate::ui::widgets::stat::Stat;
 
 pub struct FanPage {
     profile: crate::ui::commit::OptimisticChoice<FanProfile>,

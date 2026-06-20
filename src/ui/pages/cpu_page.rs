@@ -1,16 +1,16 @@
 use adw::prelude::*;
 use relm4::prelude::*;
 
-use crate::ui::widgets::chart::Chart;
-use crate::ui::widgets::gauge::{Accent, Gauge};
-use crate::ui::widgets::ledbar::LedBar;
-use crate::ui::widgets::panel::Panel;
-use crate::ui::widgets::stat::Stat;
 use crate::backend::{
     cpu::{CoreStat, CpuMonitor},
     fan,
 };
 use crate::ui::palette::{self, Rgb};
+use crate::ui::widgets::chart::Chart;
+use crate::ui::widgets::gauge::{Accent, Gauge};
+use crate::ui::widgets::ledbar::LedBar;
+use crate::ui::widgets::panel::Panel;
+use crate::ui::widgets::stat::Stat;
 
 pub struct CpuPage {
     // The monitor lives behind an Option so it can be handed to the worker
