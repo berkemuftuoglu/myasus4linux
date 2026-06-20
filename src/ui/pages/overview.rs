@@ -69,16 +69,11 @@ pub struct OverviewSample {
     profile: Option<FanProfile>,
 }
 
-#[derive(Debug)]
-pub enum OverviewOutput {
-    Error(String),
-}
-
 #[relm4::component(pub)]
 impl SimpleComponent for Overview {
     type Init = HardwareFeatures;
     type Input = OverviewInput;
-    type Output = OverviewOutput;
+    type Output = crate::ui::PageMsg;
 
     view! {
         gtk::ScrolledWindow {
@@ -311,7 +306,7 @@ impl SimpleComponent for Overview {
                 self.mode_pending = false;
                 if let Err(e) = result {
                     self.current_profile = prev;
-                    let _ = sender.output(OverviewOutput::Error(e.to_string()));
+                    let _ = sender.output(crate::ui::PageMsg::Error(e.to_string()));
                 }
             }
         }
@@ -367,7 +362,7 @@ impl Overview {
             if safeguards::thermal_override(hottest, self.current_profile).is_some() {
                 if !self.thermal_warned {
                     self.thermal_warned = true;
-                    let _ = sender.output(OverviewOutput::Error(format!(
+                    let _ = sender.output(crate::ui::PageMsg::Error(format!(
                         "{hottest:.0}°C is too hot, forcing Performance to cool down"
                     )));
                 }
@@ -417,7 +412,7 @@ impl Overview {
         if safeguards::suggest_quiet(cap, plugged, self.current_profile) {
             if !self.low_batt_warned {
                 self.low_batt_warned = true;
-                let _ = sender.output(OverviewOutput::Error(
+                let _ = sender.output(crate::ui::PageMsg::Error(
                     "Battery low, switch to Quiet mode to save power".to_owned(),
                 ));
             }

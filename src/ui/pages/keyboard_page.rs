@@ -35,17 +35,11 @@ pub enum KeyboardInput {
     ReadError(String),
 }
 
-#[derive(Debug)]
-pub enum KeyboardOutput {
-    Error(String),
-    Notice(String),
-}
-
 #[relm4::component(pub)]
 impl SimpleComponent for KeyboardPage {
     type Init = ();
     type Input = KeyboardInput;
-    type Output = KeyboardOutput;
+    type Output = crate::ui::PageMsg;
 
     view! {
         gtk::ScrolledWindow {
@@ -262,9 +256,9 @@ impl SimpleComponent for KeyboardPage {
                     self.brightness = prev;
                     self.level
                         .set(f64::from(prev) / 3.0, keyboard::brightness_label(prev));
-                    let _ = sender.output(KeyboardOutput::Error(e.to_string()));
+                    let _ = sender.output(crate::ui::PageMsg::Error(e.to_string()));
                 } else {
-                    let _ = sender.output(KeyboardOutput::Notice(format!(
+                    let _ = sender.output(crate::ui::PageMsg::Notice(format!(
                         "Keyboard backlight: {}",
                         keyboard::brightness_label(self.brightness)
                     )));
@@ -280,7 +274,7 @@ impl SimpleComponent for KeyboardPage {
                 self.screen_seq = self.screen_seq.wrapping_add(1);
                 let seq = self.screen_seq;
                 let s = sender.clone();
-                glib::timeout_add_local(std::time::Duration::from_millis(300), move || {
+                glib::timeout_add_local(std::time::Duration::from_millis(crate::ui::COMMIT_DEBOUNCE_MS), move || {
                     s.input(KeyboardInput::CommitScreen(seq));
                     glib::ControlFlow::Break
                 });
@@ -306,11 +300,11 @@ impl SimpleComponent for KeyboardPage {
                 if let Err(e) = result {
                     self.screen_committed = prev;
                     self.screen = prev;
-                    let _ = sender.output(KeyboardOutput::Error(e.to_string()));
+                    let _ = sender.output(crate::ui::PageMsg::Error(e.to_string()));
                 }
             }
             KeyboardInput::ReadError(msg) => {
-                let _ = sender.output(KeyboardOutput::Error(msg));
+                let _ = sender.output(crate::ui::PageMsg::Error(msg));
             }
         }
     }

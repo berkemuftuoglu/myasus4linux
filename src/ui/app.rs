@@ -95,38 +95,26 @@ impl SimpleComponent for App {
         let features = detect::detect_features();
         let toaster = adw::ToastOverlay::new();
 
-        let overview =
-            Overview::builder()
-                .launch(features.clone())
-                .forward(sender.input_sender(), |msg| match msg {
-                    super::pages::overview::OverviewOutput::Error(e) => AppInput::ShowToast(e),
-                });
+        let overview = Overview::builder()
+            .launch(features.clone())
+            .forward(sender.input_sender(), page_msg_to_app);
 
         let battery_page = features.battery.then(|| {
             BatteryPage::builder()
                 .launch(features.charge_limit)
-                .forward(sender.input_sender(), |msg| match msg {
-                    super::pages::battery_page::BatteryOutput::Error(e) => AppInput::ShowToast(e),
-                    super::pages::battery_page::BatteryOutput::Notice(e) => AppInput::Notify(e),
-                })
+                .forward(sender.input_sender(), page_msg_to_app)
         });
 
         let fan_page = features.fan_profile.then(|| {
             FanPage::builder()
                 .launch(())
-                .forward(sender.input_sender(), |msg| match msg {
-                    super::pages::fan_page::FanOutput::Error(e) => AppInput::ShowToast(e),
-                    super::pages::fan_page::FanOutput::Notice(e) => AppInput::Notify(e),
-                })
+                .forward(sender.input_sender(), page_msg_to_app)
         });
 
         let keyboard_page = features.keyboard_backlight.then(|| {
             KeyboardPage::builder()
                 .launch(())
-                .forward(sender.input_sender(), |msg| match msg {
-                    super::pages::keyboard_page::KeyboardOutput::Error(e) => AppInput::ShowToast(e),
-                    super::pages::keyboard_page::KeyboardOutput::Notice(e) => AppInput::Notify(e),
-                })
+                .forward(sender.input_sender(), page_msg_to_app)
         });
 
         let cpu_page = CpuPage::builder().launch(()).detach();
@@ -218,6 +206,15 @@ impl SimpleComponent for App {
                 }
             }
         }
+    }
+}
+
+/// Map a page's feedback message to an app toast. Shared by every page so the
+/// routing lives in one place instead of a closure per `forward`.
+fn page_msg_to_app(msg: crate::ui::PageMsg) -> AppInput {
+    match msg {
+        crate::ui::PageMsg::Error(e) => AppInput::ShowToast(e),
+        crate::ui::PageMsg::Notice(e) => AppInput::Notify(e),
     }
 }
 

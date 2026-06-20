@@ -42,17 +42,11 @@ pub struct FanSample {
     zones: Vec<thermal::ThermalZone>,
 }
 
-#[derive(Debug)]
-pub enum FanOutput {
-    Error(String),
-    Notice(String),
-}
-
 #[relm4::component(pub)]
 impl SimpleComponent for FanPage {
     type Init = ();
     type Input = FanInput;
-    type Output = FanOutput;
+    type Output = crate::ui::PageMsg;
 
     view! {
         gtk::ScrolledWindow {
@@ -248,16 +242,16 @@ impl SimpleComponent for FanPage {
                 self.mode_pending = false;
                 if let Err(e) = result {
                     self.current_profile = prev;
-                    let _ = sender.output(FanOutput::Error(e.to_string()));
+                    let _ = sender.output(crate::ui::PageMsg::Error(e.to_string()));
                 } else {
-                    let _ = sender.output(FanOutput::Notice(format!(
+                    let _ = sender.output(crate::ui::PageMsg::Notice(format!(
                         "{} mode applied",
                         self.current_profile.label()
                     )));
                 }
             }
             FanInput::ReadError(msg) => {
-                let _ = sender.output(FanOutput::Error(msg));
+                let _ = sender.output(crate::ui::PageMsg::Error(msg));
             }
         }
     }

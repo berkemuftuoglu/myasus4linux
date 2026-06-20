@@ -39,12 +39,6 @@ pub enum BatteryInput {
     ReadError(String),
 }
 
-#[derive(Debug)]
-pub enum BatteryOutput {
-    Error(String),
-    Notice(String),
-}
-
 impl BatteryPage {
     /// Push a fresh battery reading into all the widgets.
     fn show_values(&mut self, info: &battery::BatteryInfo) {
@@ -126,7 +120,7 @@ impl BatteryPage {
 impl SimpleComponent for BatteryPage {
     type Init = bool;
     type Input = BatteryInput;
-    type Output = BatteryOutput;
+    type Output = crate::ui::PageMsg;
 
     view! {
         gtk::ScrolledWindow {
@@ -323,7 +317,7 @@ impl SimpleComponent for BatteryPage {
                 self.commit_seq = self.commit_seq.wrapping_add(1);
                 let seq = self.commit_seq;
                 let s = sender.clone();
-                glib::timeout_add_local(std::time::Duration::from_millis(400), move || {
+                glib::timeout_add_local(std::time::Duration::from_millis(crate::ui::COMMIT_DEBOUNCE_MS), move || {
                     s.input(BatteryInput::CommitThreshold(seq));
                     glib::ControlFlow::Break
                 });
@@ -352,16 +346,16 @@ impl SimpleComponent for BatteryPage {
                 if let Err(e) = result {
                     self.committed = prev;
                     self.charge_threshold = prev;
-                    let _ = sender.output(BatteryOutput::Error(e.to_string()));
+                    let _ = sender.output(crate::ui::PageMsg::Error(e.to_string()));
                 } else {
-                    let _ = sender.output(BatteryOutput::Notice(format!(
+                    let _ = sender.output(crate::ui::PageMsg::Notice(format!(
                         "Charge limit set to {}%",
                         self.committed
                     )));
                 }
             }
             BatteryInput::ReadError(msg) => {
-                let _ = sender.output(BatteryOutput::Error(msg));
+                let _ = sender.output(crate::ui::PageMsg::Error(msg));
             }
         }
     }
