@@ -7,6 +7,9 @@ use crate::ui::palette;
 
 pub struct KeyboardPage {
     brightness: u8,
+    // True while our own backlight write is in flight, so a poll doesn't stomp
+    // the optimistic value mid-write.
+    kbd_pending: bool,
     screen: u8,
     screen_committed: u8,
     screen_seq: u32,
@@ -184,6 +187,7 @@ impl SimpleComponent for KeyboardPage {
         let screen = brightness::read_percent().unwrap_or(50);
         let model = KeyboardPage {
             brightness: 0,
+            kbd_pending: false,
             screen,
             screen_committed: screen,
             screen_seq: 0,
@@ -205,6 +209,13 @@ impl SimpleComponent for KeyboardPage {
         }
 
         sender.input(KeyboardInput::LoadBrightness);
+        // Poll so external changes (the Fn backlight key, other tools) are
+        // reflected -- those write sysfs directly and emit no D-Bus signal.
+        let ticker = sender.clone();
+        glib::timeout_add_seconds_local(crate::ui::POLL_SECS, move || {
+            ticker.input(KeyboardInput::LoadBrightness);
+            glib::ControlFlow::Continue
+        });
         ComponentParts { model, widgets }
     }
 
@@ -219,6 +230,10 @@ impl SimpleComponent for KeyboardPage {
                 });
             }
             KeyboardInput::BrightnessLoaded(val) => {
+                // Don't stomp the optimistic value while our own write is pending.
+                if self.kbd_pending {
+                    return;
+                }
                 self.brightness = val;
                 self.level
                     .set(f64::from(val) / 3.0, keyboard::brightness_label(val));
@@ -229,6 +244,7 @@ impl SimpleComponent for KeyboardPage {
                 }
                 let prev = self.brightness;
                 self.brightness = val;
+                self.kbd_pending = true;
                 self.level
                     .set(f64::from(val) / 3.0, keyboard::brightness_label(val));
                 crate::ui::offload(sender.input_sender(), move || {
@@ -239,6 +255,7 @@ impl SimpleComponent for KeyboardPage {
                 });
             }
             KeyboardInput::BrightnessWritten { result, prev } => {
+                self.kbd_pending = false;
                 if let Err(e) = result {
                     // The write failed, so the hardware never changed: undo the
                     // optimistic UI so it doesn't lie about the active level.
