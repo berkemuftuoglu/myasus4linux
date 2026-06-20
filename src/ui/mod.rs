@@ -59,3 +59,22 @@ pub fn poll<M: 'static>(
         glib::ControlFlow::Continue
     });
 }
+
+/// Schedule a slider's deferred commit: after [`COMMIT_DEBOUNCE_MS`] with no
+/// further movement, deliver `make(seq)` so the page runs its privileged write
+/// once. Pairs with [`commit::DebouncedCommit`], which hands out the `seq`, so a
+/// page no longer hand-rolls the same glib timeout per slider.
+pub fn debounce_commit<M: 'static>(
+    sender: &relm4::Sender<M>,
+    seq: u32,
+    make: impl Fn(u32) -> M + 'static,
+) {
+    let sender = sender.clone();
+    glib::timeout_add_local(
+        std::time::Duration::from_millis(COMMIT_DEBOUNCE_MS),
+        move || {
+            let _ = sender.send(make(seq));
+            glib::ControlFlow::Break
+        },
+    );
+}

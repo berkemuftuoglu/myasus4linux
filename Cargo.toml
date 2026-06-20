@@ -63,9 +63,10 @@ must_use_candidate = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 wildcard_imports = "allow"
-# precision loss on f64<-small-int (drawing geometry) is harmless; truncation
-# and sign loss are NOT blanket-allowed -- those go through clamp helpers and
-# narrowly-scoped #[allow(reason = ...)] at the call site.
+# precision loss on f64 <- small int (load averages, drawing geometry) is always
+# exact enough here; truncation and sign loss are NOT blanket-allowed -- those go
+# through clamp helpers and a narrowly-scoped #[expect(reason = ...)] at the call
+# site (see src/num.rs).
 cast_precision_loss = "allow"
 struct_field_names = "allow"
 # assigning_clones removed for test

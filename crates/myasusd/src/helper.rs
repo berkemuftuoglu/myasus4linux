@@ -454,8 +454,8 @@ mod tests {
     fn atomic_write_overwrites() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("state");
-        atomic_write(&path, "version=1\ncharge_threshold=60\n").unwrap();
-        atomic_write(&path, "version=1\ncharge_threshold=85\n").unwrap();
+        atomic_write(&path, "charge_threshold=60\n").unwrap();
+        atomic_write(&path, "charge_threshold=85\n").unwrap();
         let back = DaemonState::parse(&std::fs::read_to_string(&path).unwrap());
         assert_eq!(back.charge_threshold, Some(85));
         assert!(!has_temp_leftover(&path));

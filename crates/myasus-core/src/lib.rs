@@ -614,7 +614,7 @@ mod tests {
 
     #[test]
     fn state_ignores_unknown_keys_and_unparseable_values() {
-        let s = DaemonState::parse("version=1\ncharge_threshold=70\nfuture_key=x\nfan_profile=oops\n");
+        let s = DaemonState::parse("charge_threshold=70\nfuture_key=x\nfan_profile=oops\n");
         assert_eq!(s.charge_threshold, Some(70));
         assert_eq!(s.fan_profile, None);
     }

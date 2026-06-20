@@ -1,7 +1,8 @@
 //! The few f64 -> integer rounds the UI needs (durations, slider values),
-//! clamped into range so they can't truncate or lose a sign. Centralising them
-//! here is what lets the cast lints stay denied everywhere else instead of a
-//! blanket repo-wide allow.
+//! clamped into range so they can't truncate or lose a sign. Centralising the
+//! truncating and sign-changing casts here keeps `cast_possible_truncation` and
+//! `cast_sign_loss` denied everywhere else; only `cast_precision_loss` (a small
+//! int widening to f64) stays allowed repo-wide, since it's always exact here.
 
 /// Round and clamp an f64 into a `u32`.
 #[expect(

@@ -294,13 +294,10 @@ impl SimpleComponent for BatteryPage {
                 // Optimistic display now; defer the privileged write until the
                 // drag settles, so one drag is one authorised write, not ~40.
                 if let Some(seq) = self.charge.slide(val) {
-                    let s = sender.clone();
-                    glib::timeout_add_local(
-                        std::time::Duration::from_millis(crate::ui::COMMIT_DEBOUNCE_MS),
-                        move || {
-                            s.input(BatteryInput::CommitThreshold(seq));
-                            glib::ControlFlow::Break
-                        },
+                    crate::ui::debounce_commit(
+                        sender.input_sender(),
+                        seq,
+                        BatteryInput::CommitThreshold,
                     );
                 }
             }

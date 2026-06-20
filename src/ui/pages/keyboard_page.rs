@@ -6,13 +6,20 @@ use crate::backend::{brightness, error::BackendError, keyboard};
 use crate::ui::palette;
 
 pub struct KeyboardPage {
-    brightness: u8,
-    // True while our own backlight write is in flight, so a poll doesn't stomp
-    // the optimistic value mid-write.
-    kbd_pending: bool,
+    brightness: crate::ui::commit::OptimisticChoice<u8>,
     screen: crate::ui::commit::DebouncedCommit<u8>,
     screen_available: bool,
     level: LedBar,
+}
+
+impl KeyboardPage {
+    /// Push the active backlight level into the LED bar, which isn't part of the
+    /// `#[watch]` tree and so has to be updated by hand.
+    fn sync_level(&self) {
+        let v = self.brightness.current();
+        self.level
+            .set(f64::from(v) / 3.0, keyboard::brightness_label(v));
+    }
 }
 
 #[derive(Debug)]
@@ -20,10 +27,7 @@ pub enum KeyboardInput {
     LoadBrightness,
     BrightnessLoaded(u8),
     SetBrightness(u8),
-    BrightnessWritten {
-        result: Result<(), BackendError>,
-        prev: u8,
-    },
+    BrightnessWritten(Result<(), BackendError>),
     LoadScreen,
     ScreenLoaded(Option<u8>),
     ScreenMoved(u8),
@@ -71,7 +75,7 @@ impl SimpleComponent for KeyboardPage {
                         gtk::Label {
                             add_css_class: "panel-corner",
                             #[watch]
-                            set_label: keyboard::brightness_label(model.brightness),
+                            set_label: keyboard::brightness_label(model.brightness.current()),
                         },
                     },
 
@@ -88,7 +92,7 @@ impl SimpleComponent for KeyboardPage {
                             gtk::ToggleButton {
                                 set_label: "Off",
                                 #[watch]
-                                set_active: model.brightness == 0,
+                                set_active: model.brightness.current() == 0,
                                 connect_clicked[sender] => move |b| if b.is_active() {
                                     sender.input(KeyboardInput::SetBrightness(0));
                                 },
@@ -97,7 +101,7 @@ impl SimpleComponent for KeyboardPage {
                             gtk::ToggleButton {
                                 set_label: "Low",
                                 #[watch]
-                                set_active: model.brightness == 1,
+                                set_active: model.brightness.current() == 1,
                                 connect_clicked[sender] => move |b| if b.is_active() {
                                     sender.input(KeyboardInput::SetBrightness(1));
                                 },
@@ -106,7 +110,7 @@ impl SimpleComponent for KeyboardPage {
                             gtk::ToggleButton {
                                 set_label: "Medium",
                                 #[watch]
-                                set_active: model.brightness == 2,
+                                set_active: model.brightness.current() == 2,
                                 connect_clicked[sender] => move |b| if b.is_active() {
                                     sender.input(KeyboardInput::SetBrightness(2));
                                 },
@@ -115,7 +119,7 @@ impl SimpleComponent for KeyboardPage {
                             gtk::ToggleButton {
                                 set_label: "High",
                                 #[watch]
-                                set_active: model.brightness == 3,
+                                set_active: model.brightness.current() == 3,
                                 connect_clicked[sender] => move |b| if b.is_active() {
                                     sender.input(KeyboardInput::SetBrightness(3));
                                 },
@@ -177,8 +181,7 @@ impl SimpleComponent for KeyboardPage {
     ) -> ComponentParts<Self> {
         let screen = brightness::read_percent().unwrap_or(50);
         let model = KeyboardPage {
-            brightness: 0,
-            kbd_pending: false,
+            brightness: crate::ui::commit::OptimisticChoice::new(0),
             screen: crate::ui::commit::DebouncedCommit::new(screen),
             screen_available: brightness::available(),
             level: LedBar::accent("Level", palette::GOOD),
@@ -218,44 +221,33 @@ impl SimpleComponent for KeyboardPage {
                 });
             }
             KeyboardInput::BrightnessLoaded(val) => {
-                // Don't stomp the optimistic value while our own write is pending.
-                if self.kbd_pending {
-                    return;
-                }
-                self.brightness = val;
-                self.level
-                    .set(f64::from(val) / 3.0, keyboard::brightness_label(val));
+                // poll() ignores this while our own write is in flight.
+                self.brightness.poll(val);
+                self.sync_level();
             }
             KeyboardInput::SetBrightness(val) => {
-                if val == self.brightness {
-                    return;
+                if let Some(v) = self.brightness.pick(val) {
+                    self.sync_level();
+                    crate::ui::offload(sender.input_sender(), move || {
+                        KeyboardInput::BrightnessWritten(keyboard::set_brightness(v))
+                    });
                 }
-                let prev = self.brightness;
-                self.brightness = val;
-                self.kbd_pending = true;
-                self.level
-                    .set(f64::from(val) / 3.0, keyboard::brightness_label(val));
-                crate::ui::offload(sender.input_sender(), move || {
-                    KeyboardInput::BrightnessWritten {
-                        result: keyboard::set_brightness(val),
-                        prev,
-                    }
-                });
             }
-            KeyboardInput::BrightnessWritten { result, prev } => {
-                self.kbd_pending = false;
-                if let Err(e) = result {
-                    // The write failed, so the hardware never changed: undo the
-                    // optimistic UI so it doesn't lie about the active level.
-                    self.brightness = prev;
-                    self.level
-                        .set(f64::from(prev) / 3.0, keyboard::brightness_label(prev));
-                    let _ = sender.output(crate::ui::PageMsg::Error(e.to_string()));
-                } else {
-                    let _ = sender.output(crate::ui::PageMsg::Notice(format!(
-                        "Keyboard backlight: {}",
-                        keyboard::brightness_label(self.brightness)
-                    )));
+            KeyboardInput::BrightnessWritten(result) => {
+                // On failure OptimisticChoice rolls current() back to the level
+                // before the pick, so re-sync the bar to whatever stuck.
+                self.brightness.written(result.is_ok());
+                self.sync_level();
+                match result {
+                    Ok(()) => {
+                        let _ = sender.output(crate::ui::PageMsg::Notice(format!(
+                            "Keyboard backlight: {}",
+                            keyboard::brightness_label(self.brightness.current())
+                        )));
+                    }
+                    Err(e) => {
+                        let _ = sender.output(crate::ui::PageMsg::Error(e.to_string()));
+                    }
                 }
             }
             KeyboardInput::LoadScreen => {
@@ -273,13 +265,10 @@ impl SimpleComponent for KeyboardPage {
                 // Optimistic display now; defer the write until the drag settles
                 // so a drag is one write, not one per step.
                 if let Some(seq) = self.screen.slide(val) {
-                    let s = sender.clone();
-                    glib::timeout_add_local(
-                        std::time::Duration::from_millis(crate::ui::COMMIT_DEBOUNCE_MS),
-                        move || {
-                            s.input(KeyboardInput::CommitScreen(seq));
-                            glib::ControlFlow::Break
-                        },
+                    crate::ui::debounce_commit(
+                        sender.input_sender(),
+                        seq,
+                        KeyboardInput::CommitScreen,
                     );
                 }
             }

@@ -259,16 +259,25 @@ impl SimpleComponent for Overview {
                     let has_battery = self.has_battery;
                     crate::ui::offload(sender.input_sender(), move || {
                         let cores = monitor.sample();
+                        // A failed live read on the always-open dashboard is logged
+                        // rather than silently dropped, but kept off the toast
+                        // overlay so a flaky sensor can't spam a warning every poll.
+                        let battery = if has_battery {
+                            battery::read_battery_info()
+                                .inspect_err(|e| tracing::warn!("overview battery read: {e}"))
+                                .ok()
+                        } else {
+                            None
+                        };
+                        let profile = fan::read_profile()
+                            .inspect_err(|e| tracing::warn!("overview profile read: {e}"))
+                            .ok();
                         OverviewInput::Sampled(Box::new(OverviewSample {
                             cores,
                             cpu_temp: fan::read_cpu_temp(),
                             zones: thermal::read_zones(),
-                            battery: if has_battery {
-                                battery::read_battery_info().ok()
-                            } else {
-                                None
-                            },
-                            profile: fan::read_profile().ok(),
+                            battery,
+                            profile,
                             monitor,
                         }))
                     });
