@@ -192,12 +192,24 @@ fn fan_profile_write(value: u8) -> Result<(PathBuf, String), HelperError> {
     if Path::new(myasus_core::FAN_PROFILE_PATH).exists() {
         return Ok((PathBuf::from(myasus_core::FAN_PROFILE_PATH), value.to_string()));
     }
-    let token = myasus_core::platform_profile_token(value).ok_or(HelperError::NoFanControl)?;
-    if Path::new(myasus_core::PLATFORM_PROFILE_PATH).exists() && platform_profile_supports(token) {
-        Ok((PathBuf::from(myasus_core::PLATFORM_PROFILE_PATH), token.to_owned()))
-    } else {
-        Err(HelperError::NoFanControl)
+    if !Path::new(myasus_core::PLATFORM_PROFILE_PATH).exists() {
+        return Err(HelperError::NoFanControl);
     }
+    // Map the canonical profile to whichever token this firmware actually offers.
+    // Many Zenbook/Vivobook expose `low-power` but not `quiet`, so our Quiet has
+    // to resolve to low-power there.
+    let candidates: &[&str] = match value {
+        0 => &["balanced"],
+        1 => &["performance"],
+        2 => &["quiet", "low-power"],
+        _ => return Err(HelperError::NoFanControl),
+    };
+    let token = candidates
+        .iter()
+        .copied()
+        .find(|t| platform_profile_supports(t))
+        .ok_or(HelperError::NoFanControl)?;
+    Ok((PathBuf::from(myasus_core::PLATFORM_PROFILE_PATH), token.to_owned()))
 }
 
 fn platform_profile_supports(token: &str) -> bool {

@@ -270,17 +270,6 @@ pub fn thermal_override(max_temp_c: f64, current: u8) -> Option<u8> {
     (max_temp_c >= THERMAL_LIMIT_C && current != PERFORMANCE).then_some(PERFORMANCE)
 }
 
-/// The `platform_profile` token for a canonical fan-profile value (0=balanced,
-/// 1=performance, 2=quiet), or `None` if out of range.
-pub fn platform_profile_token(value: u8) -> Option<&'static str> {
-    match value {
-        0 => Some("balanced"),
-        1 => Some("performance"),
-        2 => Some("quiet"),
-        _ => None,
-    }
-}
-
 fn is_battery(dir: &Path) -> bool {
     std::fs::read_to_string(dir.join("type")).is_ok_and(|t| t.trim().eq_ignore_ascii_case("Battery"))
 }
