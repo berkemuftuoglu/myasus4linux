@@ -10,9 +10,7 @@ pub struct KeyboardPage {
     // True while our own backlight write is in flight, so a poll doesn't stomp
     // the optimistic value mid-write.
     kbd_pending: bool,
-    screen: u8,
-    screen_committed: u8,
-    screen_seq: u32,
+    screen: crate::ui::commit::DebouncedCommit<u8>,
     screen_available: bool,
     level: LedBar,
 }
@@ -26,12 +24,11 @@ pub enum KeyboardInput {
         result: Result<(), BackendError>,
         prev: u8,
     },
+    LoadScreen,
+    ScreenLoaded(Option<u8>),
     ScreenMoved(u8),
     CommitScreen(u32),
-    ScreenWritten {
-        result: Result<(), BackendError>,
-        prev: u8,
-    },
+    ScreenWritten(Result<(), BackendError>),
     ReadError(String),
 }
 
@@ -146,7 +143,7 @@ impl SimpleComponent for KeyboardPage {
                         gtk::Label {
                             add_css_class: "panel-corner",
                             #[watch]
-                            set_label: &format!("{}%", model.screen),
+                            set_label: &format!("{}%", model.screen.value()),
                         },
                     },
 
@@ -162,7 +159,7 @@ impl SimpleComponent for KeyboardPage {
                             set_adjustment: &gtk::Adjustment::new(50.0, 5.0, 100.0, 5.0, 10.0, 0.0),
                             #[watch]
                             #[block_signal(screen_changed)]
-                            set_value: f64::from(model.screen),
+                            set_value: f64::from(model.screen.value()),
                             connect_value_changed[sender] => move |s| {
                                 sender.input(KeyboardInput::ScreenMoved(crate::num::round_u8_in(s.value(), 5, 100)));
                             } @screen_changed,
@@ -182,9 +179,7 @@ impl SimpleComponent for KeyboardPage {
         let model = KeyboardPage {
             brightness: 0,
             kbd_pending: false,
-            screen,
-            screen_committed: screen,
-            screen_seq: 0,
+            screen: crate::ui::commit::DebouncedCommit::new(screen),
             screen_available: brightness::available(),
             level: LedBar::accent("Level", palette::GOOD),
         };
@@ -203,11 +198,14 @@ impl SimpleComponent for KeyboardPage {
         }
 
         sender.input(KeyboardInput::LoadBrightness);
-        // Poll so external changes (the Fn backlight key, other tools) are
-        // reflected -- those write sysfs directly and emit no D-Bus signal.
+        sender.input(KeyboardInput::LoadScreen);
+        // Poll so external changes (the Fn backlight key, screen auto-dim, other
+        // tools) are reflected -- those write sysfs directly and emit no D-Bus
+        // signal, so a poll is the only way to catch them.
         let ticker = sender.clone();
         glib::timeout_add_seconds_local(crate::ui::POLL_SECS, move || {
             ticker.input(KeyboardInput::LoadBrightness);
+            ticker.input(KeyboardInput::LoadScreen);
             glib::ControlFlow::Continue
         });
         ComponentParts { model, widgets }
@@ -264,42 +262,41 @@ impl SimpleComponent for KeyboardPage {
                     )));
                 }
             }
-            KeyboardInput::ScreenMoved(val) => {
-                if val == self.screen {
-                    return;
+            KeyboardInput::LoadScreen => {
+                crate::ui::offload(sender.input_sender(), || {
+                    KeyboardInput::ScreenLoaded(brightness::read_percent())
+                });
+            }
+            KeyboardInput::ScreenLoaded(value) => {
+                // poll() ignores this while our own write is in flight.
+                if let Some(v) = value {
+                    self.screen.poll(v);
                 }
+            }
+            KeyboardInput::ScreenMoved(val) => {
                 // Optimistic display now; defer the write until the drag settles
                 // so a drag is one write, not one per step.
-                self.screen = val;
-                self.screen_seq = self.screen_seq.wrapping_add(1);
-                let seq = self.screen_seq;
-                let s = sender.clone();
-                glib::timeout_add_local(std::time::Duration::from_millis(crate::ui::COMMIT_DEBOUNCE_MS), move || {
-                    s.input(KeyboardInput::CommitScreen(seq));
-                    glib::ControlFlow::Break
-                });
+                if let Some(seq) = self.screen.slide(val) {
+                    let s = sender.clone();
+                    glib::timeout_add_local(
+                        std::time::Duration::from_millis(crate::ui::COMMIT_DEBOUNCE_MS),
+                        move || {
+                            s.input(KeyboardInput::CommitScreen(seq));
+                            glib::ControlFlow::Break
+                        },
+                    );
+                }
             }
             KeyboardInput::CommitScreen(seq) => {
-                if seq != self.screen_seq {
-                    return;
+                if let Some(val) = self.screen.commit(seq) {
+                    crate::ui::offload(sender.input_sender(), move || {
+                        KeyboardInput::ScreenWritten(brightness::set_percent(val))
+                    });
                 }
-                let val = self.screen;
-                if val == self.screen_committed {
-                    return;
-                }
-                let prev = self.screen_committed;
-                self.screen_committed = val;
-                crate::ui::offload(sender.input_sender(), move || {
-                    KeyboardInput::ScreenWritten {
-                        result: brightness::set_percent(val),
-                        prev,
-                    }
-                });
             }
-            KeyboardInput::ScreenWritten { result, prev } => {
+            KeyboardInput::ScreenWritten(result) => {
+                self.screen.written(result.is_ok());
                 if let Err(e) = result {
-                    self.screen_committed = prev;
-                    self.screen = prev;
                     let _ = sender.output(crate::ui::PageMsg::Error(e.to_string()));
                 }
             }

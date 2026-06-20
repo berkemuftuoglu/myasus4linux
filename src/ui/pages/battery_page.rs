@@ -10,10 +10,7 @@ use crate::format::duration_hm;
 use crate::ui::palette::Rgb;
 
 pub struct BatteryPage {
-    charge_threshold: u8,
-    committed: u8,
-    commit_pending: bool,
-    commit_seq: u32,
+    charge: crate::ui::commit::DebouncedCommit<u8>,
     charging: bool,
     charge_supported: bool,
     charge_cell: BatteryCell,
@@ -32,10 +29,7 @@ pub enum BatteryInput {
     ValuesLoaded(Box<battery::BatteryInfo>),
     SliderMoved(u8),
     CommitThreshold(u32),
-    ThresholdWritten {
-        result: Result<(), BackendError>,
-        prev: u8,
-    },
+    ThresholdWritten(Result<(), BackendError>),
     ReadError(String),
 }
 
@@ -105,13 +99,10 @@ impl BatteryPage {
         };
         self.src_s.set(src, src_sub);
 
-        // Don't let a 2s poll stomp the value while the user is dragging the
-        // slider or a debounced write is still in flight.
-        if !self.commit_pending {
-            if let Some(threshold) = info.charge_threshold {
-                self.charge_threshold = threshold;
-                self.committed = threshold;
-            }
+        // poll() ignores this while a write is in flight, so it can't stomp the
+        // optimistic value mid-drag.
+        if let Some(threshold) = info.charge_threshold {
+            self.charge.poll(threshold);
         }
     }
 }
@@ -176,7 +167,7 @@ impl SimpleComponent for BatteryPage {
                         gtk::Label {
                             add_css_class: "panel-corner",
                             #[watch]
-                            set_label: &format!("{}%", model.charge_threshold),
+                            set_label: &format!("{}%", model.charge.value()),
                         },
                     },
 
@@ -205,7 +196,7 @@ impl SimpleComponent for BatteryPage {
                             ),
                             #[watch]
                             #[block_signal(limit_changed)]
-                            set_value: f64::from(model.charge_threshold),
+                            set_value: f64::from(model.charge.value()),
                             connect_value_changed[sender] => move |s| {
                                 sender.input(BatteryInput::SliderMoved(
                                     crate::num::round_u8_in(s.value(), battery::THRESHOLD_MIN, battery::THRESHOLD_MAX),
@@ -218,7 +209,7 @@ impl SimpleComponent for BatteryPage {
                             add_css_class: "warning",
                             set_label: "Keeping the battery at 100% shortens its lifespan.",
                             #[watch]
-                            set_visible: model.charge_threshold >= 100,
+                            set_visible: model.charge.value() >= 100,
                         },
                     },
                 },
@@ -233,10 +224,7 @@ impl SimpleComponent for BatteryPage {
     ) -> ComponentParts<Self> {
         let initial = battery::charge_threshold().unwrap_or(battery::THRESHOLD_DEFAULT);
         let model = BatteryPage {
-            charge_threshold: initial,
-            committed: initial,
-            commit_pending: false,
-            commit_seq: 0,
+            charge: crate::ui::commit::DebouncedCommit::new(initial),
             charging: false,
             charge_supported,
             charge_cell: BatteryCell::new(168),
@@ -307,51 +295,32 @@ impl SimpleComponent for BatteryPage {
             }
             BatteryInput::ValuesLoaded(info) => self.show_values(&info),
             BatteryInput::SliderMoved(val) => {
-                if val == self.charge_threshold {
-                    return;
-                }
                 // Optimistic display now; defer the privileged write until the
                 // drag settles, so one drag is one authorised write, not ~40.
-                self.charge_threshold = val;
-                self.commit_pending = true;
-                self.commit_seq = self.commit_seq.wrapping_add(1);
-                let seq = self.commit_seq;
-                let s = sender.clone();
-                glib::timeout_add_local(std::time::Duration::from_millis(crate::ui::COMMIT_DEBOUNCE_MS), move || {
-                    s.input(BatteryInput::CommitThreshold(seq));
-                    glib::ControlFlow::Break
-                });
+                if let Some(seq) = self.charge.slide(val) {
+                    let s = sender.clone();
+                    glib::timeout_add_local(
+                        std::time::Duration::from_millis(crate::ui::COMMIT_DEBOUNCE_MS),
+                        move || {
+                            s.input(BatteryInput::CommitThreshold(seq));
+                            glib::ControlFlow::Break
+                        },
+                    );
+                }
             }
             BatteryInput::CommitThreshold(seq) => {
-                // Superseded by a newer move: let the latest one commit instead.
-                if seq != self.commit_seq {
-                    return;
+                if let Some(val) = self.charge.commit(seq) {
+                    crate::ui::offload(sender.input_sender(), move || {
+                        BatteryInput::ThresholdWritten(battery::set_charge_threshold(val))
+                    });
                 }
-                let val = self.charge_threshold;
-                if val == self.committed {
-                    self.commit_pending = false;
-                    return;
-                }
-                let prev = self.committed;
-                self.committed = val;
-                crate::ui::offload(sender.input_sender(), move || {
-                    BatteryInput::ThresholdWritten {
-                        result: battery::set_charge_threshold(val),
-                        prev,
-                    }
-                });
             }
-            BatteryInput::ThresholdWritten { result, prev } => {
-                self.commit_pending = false;
+            BatteryInput::ThresholdWritten(result) => {
+                // Sliders update visibly and live, so they commit quietly; only a
+                // failure is worth a toast. (Discrete buttons still confirm.)
+                self.charge.written(result.is_ok());
                 if let Err(e) = result {
-                    self.committed = prev;
-                    self.charge_threshold = prev;
                     let _ = sender.output(crate::ui::PageMsg::Error(e.to_string()));
-                } else {
-                    let _ = sender.output(crate::ui::PageMsg::Notice(format!(
-                        "Charge limit set to {}%",
-                        self.committed
-                    )));
                 }
             }
             BatteryInput::ReadError(msg) => {

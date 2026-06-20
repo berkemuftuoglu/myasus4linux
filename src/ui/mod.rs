@@ -1,5 +1,6 @@
 pub mod app;
 pub mod builders;
+pub mod commit;
 pub mod pages;
 pub mod palette;
 pub mod widgets;
