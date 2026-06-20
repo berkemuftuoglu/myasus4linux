@@ -205,6 +205,74 @@ fn platform_profile_supports(token: &str) -> bool {
         .is_ok_and(|s| s.split_whitespace().any(|c| c == token))
 }
 
+/// The hottest thermal zone in Celsius, scanning every `thermal_zone*`. `None`
+/// when none are readable.
+fn thermal_max_celsius() -> Option<f64> {
+    let mut max: Option<f64> = None;
+    for entry in std::fs::read_dir("/sys/class/thermal").ok()?.flatten() {
+        let p = entry.path();
+        if !p
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.starts_with("thermal_zone"))
+        {
+            continue;
+        }
+        if let Ok(milli) = std::fs::read_to_string(p.join("temp")) {
+            if let Ok(v) = milli.trim().parse::<f64>() {
+                let c = v / 1000.0;
+                max = Some(max.map_or(c, |m| m.max(c)));
+            }
+        }
+    }
+    max
+}
+
+/// The active profile as a canonical value (0=balanced, 1=performance,
+/// 2=quiet) from whichever interface is live. `None` if neither is readable.
+fn current_profile_raw() -> Option<u8> {
+    if let Ok(s) = std::fs::read_to_string(myasus_core::FAN_PROFILE_PATH) {
+        return s.trim().parse().ok();
+    }
+    match std::fs::read_to_string(myasus_core::PLATFORM_PROFILE_PATH)
+        .ok()?
+        .trim()
+    {
+        "performance" => Some(1),
+        "balanced" => Some(0),
+        "quiet" | "low-power" => Some(2),
+        _ => None,
+    }
+}
+
+/// Headless thermal protection: poll the sensors and force maximum cooling when
+/// any zone crosses the limit, even with no GUI open. The write is transient
+/// (never persisted) and never escalates privilege -- the daemon acts on its own.
+/// asusctl deliberately leaves this to the EC; we add it as a safety net.
+pub fn spawn_thermal_guard() {
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(5));
+        loop {
+            tick.tick().await;
+            let decision = tokio::task::spawn_blocking(|| {
+                let max = thermal_max_celsius()?;
+                let cur = current_profile_raw()?;
+                myasus_core::thermal_override(max, cur).map(|p| (max, p))
+            })
+            .await;
+            if let Ok(Some((max, profile))) = decision {
+                tracing::warn!("thermal guard: {max:.0}C over limit, forcing performance");
+                match tokio::task::spawn_blocking(move || perform_write(Op::FanProfile(profile))).await
+                {
+                    Ok(Ok(())) => {}
+                    Ok(Err(e)) => tracing::warn!("thermal guard could not force performance: {e}"),
+                    Err(e) => tracing::warn!("thermal guard write task panicked: {e}"),
+                }
+            }
+        }
+    });
+}
+
 /// Record an op into the persisted state. Best-effort: a failed persist must
 /// never fail the privileged write the user just authorised.
 fn persist_op(op: Op) {

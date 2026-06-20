@@ -4,8 +4,9 @@
 use super::fan::FanProfile;
 
 /// Any thermal zone at or above this temperature (Celsius) forces maximum
-/// cooling regardless of the user's chosen profile.
-pub const THERMAL_LIMIT_C: f64 = 90.0;
+/// cooling regardless of the user's chosen profile. The policy lives in
+/// `myasus_core` so the GUI and the daemon's headless guard agree.
+pub const THERMAL_LIMIT_C: f64 = myasus_core::THERMAL_LIMIT_C;
 
 /// At or below this battery percentage, on battery power, we suggest the quiet
 /// (lower-power) profile.
@@ -14,12 +15,10 @@ pub const LOW_BATTERY_PCT: u8 = 20;
 /// The profile to force when the machine is too hot to leave cooling to the
 /// user, or `None` when no override is needed. Forcing `Performance` spins the
 /// fans up; it is skipped when already there so the safeguard can't thrash.
+/// Delegates to the shared `myasus_core` policy.
 pub fn thermal_override(max_temp_c: f64, current: FanProfile) -> Option<FanProfile> {
-    if max_temp_c >= THERMAL_LIMIT_C && current != FanProfile::Performance {
-        Some(FanProfile::Performance)
-    } else {
-        None
-    }
+    myasus_core::thermal_override(max_temp_c, current.as_raw())
+        .and_then(|v| FanProfile::from_raw(v).ok())
 }
 
 /// Whether to suggest quiet mode: only on battery, only when low, and only if

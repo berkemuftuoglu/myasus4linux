@@ -46,6 +46,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // across sleep on many laptops).
     helper::spawn_resume_listener(&connection).await;
 
+    // Headless safety net: force max cooling if any sensor crosses the limit.
+    helper::spawn_thermal_guard();
+
     tracing::info!("myasusd up, owning {DBUS_NAME} at {DBUS_PATH}");
 
     wait_for_shutdown().await;

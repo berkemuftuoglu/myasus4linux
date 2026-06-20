@@ -257,6 +257,19 @@ impl DaemonState {
     }
 }
 
+/// Any thermal zone at or above this (Celsius) forces maximum cooling regardless
+/// of the user's chosen profile. Shared by the GUI safeguard and the daemon's
+/// headless guard so both agree on the policy.
+pub const THERMAL_LIMIT_C: f64 = 90.0;
+
+/// The profile to force when too hot, or `None` when no override is needed.
+/// `current` and the return are canonical fan-profile values (1 == performance
+/// == max cooling). Skipped when already at performance so it cannot thrash.
+pub fn thermal_override(max_temp_c: f64, current: u8) -> Option<u8> {
+    const PERFORMANCE: u8 = 1;
+    (max_temp_c >= THERMAL_LIMIT_C && current != PERFORMANCE).then_some(PERFORMANCE)
+}
+
 /// The `platform_profile` token for a canonical fan-profile value (0=balanced,
 /// 1=performance, 2=quiet), or `None` if out of range.
 pub fn platform_profile_token(value: u8) -> Option<&'static str> {
@@ -432,6 +445,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("input3::scrolllock")).unwrap();
         assert_eq!(kbd_backlight_path(dir.path()), None);
+    }
+
+    #[test]
+    fn thermal_override_forces_performance_only_when_hot() {
+        assert_eq!(thermal_override(91.0, 0), Some(1));
+        assert_eq!(thermal_override(90.0, 2), Some(1));
+        assert_eq!(thermal_override(89.9, 0), None);
+        assert_eq!(thermal_override(95.0, 1), None); // already at performance
     }
 
     #[test]
