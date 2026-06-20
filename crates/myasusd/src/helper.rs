@@ -116,19 +116,12 @@ async fn apply(
 ) -> Result<(), HelperError> {
     authorize(connection, header, action_id).await?;
     op.validate()?;
-    // Do the privileged write (and persist) on a blocking thread so neither
-    // stalls the async D-Bus executor. The map_err handles a panicked worker;
-    // the inner `?`s handle the write/persist themselves failing.
-    tokio::task::spawn_blocking(move || -> Result<(), HelperError> {
-        perform_write(op)?;
-        persist_op(op);
-        Ok(())
-    })
-    .await
-    .map_err(|join| HelperError::Write {
-        path: "worker".to_owned(),
-        source: std::io::Error::other(join),
-    })??;
+    // The writes are tiny sysfs + state-file writes (sub-millisecond), so do them
+    // inline. We must NOT use tokio::task::spawn_blocking here: this handler runs
+    // on zbus's own executor thread, which has no Tokio runtime, so spawn_blocking
+    // would panic ("no reactor running").
+    perform_write(op)?;
+    persist_op(op);
     Ok(())
 }
 
