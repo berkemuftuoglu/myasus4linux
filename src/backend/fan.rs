@@ -36,18 +36,15 @@ impl FanProfile {
         }
     }
 
-    /// Map a `platform_profile` token to a profile. `low-power` collapses into
-    /// `Quiet` (the closest of our three buckets).
+    /// Map a `platform_profile` token to a profile via the shared core mapping.
+    /// `low-power` collapses into `Quiet` (the closest of our three buckets).
     pub fn from_platform_token(token: &str) -> Result<Self, BackendError> {
-        match token.trim() {
-            "balanced" => Ok(Self::Balanced),
-            "performance" => Ok(Self::Performance),
-            "quiet" | "low-power" => Ok(Self::Quiet),
-            other => Err(BackendError::ParseError {
+        myasus_core::profile_from_token(token)
+            .and_then(|v| Self::from_raw(v).ok())
+            .ok_or_else(|| BackendError::ParseError {
                 path: myasus_core::PLATFORM_PROFILE_PATH.to_owned(),
-                details: format!("unknown platform_profile {other:?}"),
-            }),
-        }
+                details: format!("unknown platform_profile {token:?}"),
+            })
     }
 }
 

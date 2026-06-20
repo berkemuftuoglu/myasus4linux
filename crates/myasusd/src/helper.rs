@@ -195,16 +195,10 @@ fn fan_profile_write(value: u8) -> Result<(PathBuf, String), HelperError> {
     if !Path::new(myasus_core::PLATFORM_PROFILE_PATH).exists() {
         return Err(HelperError::NoFanControl);
     }
-    // Map the canonical profile to whichever token this firmware actually offers.
-    // Many Zenbook/Vivobook expose `low-power` but not `quiet`, so our Quiet has
-    // to resolve to low-power there.
-    let candidates: &[&str] = match value {
-        0 => &["balanced"],
-        1 => &["performance"],
-        2 => &["quiet", "low-power"],
-        _ => return Err(HelperError::NoFanControl),
-    };
-    let token = candidates
+    // Map the canonical profile to whichever token this firmware actually offers
+    // (Zenbook/Vivobook often expose `low-power` but not `quiet`). The candidate
+    // list is the shared core mapping, not a third copy of it.
+    let token = myasus_core::profile_tokens(value)
         .iter()
         .copied()
         .find(|t| platform_profile_supports(t))
@@ -246,15 +240,7 @@ fn current_profile_raw() -> Option<u8> {
     if let Ok(s) = std::fs::read_to_string(myasus_core::FAN_PROFILE_PATH) {
         return s.trim().parse().ok();
     }
-    match std::fs::read_to_string(myasus_core::PLATFORM_PROFILE_PATH)
-        .ok()?
-        .trim()
-    {
-        "performance" => Some(1),
-        "balanced" => Some(0),
-        "quiet" | "low-power" => Some(2),
-        _ => None,
-    }
+    myasus_core::profile_from_token(&std::fs::read_to_string(myasus_core::PLATFORM_PROFILE_PATH).ok()?)
 }
 
 /// Headless thermal protection: poll the sensors and force maximum cooling when

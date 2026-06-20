@@ -218,7 +218,7 @@ impl DaemonState {
 
     pub fn serialize(&self) -> String {
         use std::fmt::Write as _;
-        let mut out = String::from("version=1\n");
+        let mut out = String::new();
         for (key, value) in [
             ("charge_threshold", self.charge_threshold),
             ("fan_profile", self.fan_profile),
@@ -268,6 +268,29 @@ pub const THERMAL_LIMIT_C: f64 = 90.0;
 pub fn thermal_override(max_temp_c: f64, current: u8) -> Option<u8> {
     const PERFORMANCE: u8 = 1;
     (max_temp_c >= THERMAL_LIMIT_C && current != PERFORMANCE).then_some(PERFORMANCE)
+}
+
+/// Canonical fan-profile value for a `platform_profile` token (0=balanced,
+/// 1=performance, 2=quiet, where `low-power` collapses into quiet), or `None`
+/// for an unknown token. The single mapping the GUI and daemon both use.
+pub fn profile_from_token(token: &str) -> Option<u8> {
+    match token.trim() {
+        "balanced" => Some(0),
+        "performance" => Some(1),
+        "quiet" | "low-power" => Some(2),
+        _ => None,
+    }
+}
+
+/// The `platform_profile` tokens that satisfy a canonical value, best first.
+/// Quiet resolves to whichever of `quiet`/`low-power` the firmware exposes.
+pub fn profile_tokens(value: u8) -> &'static [&'static str] {
+    match value {
+        0 => &["balanced"],
+        1 => &["performance"],
+        2 => &["quiet", "low-power"],
+        _ => &[],
+    }
 }
 
 fn is_battery(dir: &Path) -> bool {
@@ -434,6 +457,18 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("input3::scrolllock")).unwrap();
         assert_eq!(kbd_backlight_path(dir.path()), None);
+    }
+
+    #[test]
+    fn profile_token_mapping_round_trips() {
+        assert_eq!(profile_from_token("balanced"), Some(0));
+        assert_eq!(profile_from_token("performance"), Some(1));
+        assert_eq!(profile_from_token("quiet"), Some(2));
+        assert_eq!(profile_from_token("low-power"), Some(2)); // collapses into quiet
+        assert_eq!(profile_from_token(" performance\n"), Some(1)); // trims
+        assert_eq!(profile_from_token("turbo"), None);
+        assert_eq!(profile_tokens(2), &["quiet", "low-power"]);
+        assert!(profile_tokens(9).is_empty());
     }
 
     #[test]
