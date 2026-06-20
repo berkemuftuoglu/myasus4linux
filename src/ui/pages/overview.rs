@@ -353,20 +353,22 @@ impl Overview {
         }
 
         crate::ui::builders::zones::update(&self.zone_meters, &zones);
-        if let Some(hottest) = zones.iter().map(|z| z.celsius).reduce(f64::max) {
-            self.zone_panel.set_corner(&format!("max {hottest:.0}°C"));
+        if let Some(hot) = zones.iter().max_by(|a, b| a.celsius.total_cmp(&b.celsius)) {
+            self.zone_panel.set_corner(&format!("max {:.0}°C", hot.celsius));
             // Safeguard feedback: the daemon's thermal guard forces maximum
             // cooling headless and restores the profile when it cools; here we
             // just tell the user, once per hot episode (reset once it cools), so
-            // there aren't two loops fighting over the same sysfs node.
-            if safeguards::thermal_override(hottest, self.current_profile).is_some() {
+            // there aren't two loops fighting over the same sysfs node. Name the
+            // zone so the gauge's CPU temp not matching doesn't look like a glitch.
+            if safeguards::thermal_override(hot.celsius, self.current_profile).is_some() {
                 if !self.thermal_warned {
                     self.thermal_warned = true;
                     let _ = sender.output(crate::ui::PageMsg::Notice(format!(
-                        "{hottest:.0}°C is too hot, forcing Performance to cool down"
+                        "{} at {:.0}°C is too hot, forcing Performance to cool down",
+                        hot.label, hot.celsius
                     )));
                 }
-            } else if hottest < safeguards::THERMAL_LIMIT_C {
+            } else if hot.celsius < safeguards::THERMAL_LIMIT_C {
                 self.thermal_warned = false;
             }
         }

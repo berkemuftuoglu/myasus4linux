@@ -58,38 +58,10 @@ pub fn read_profile() -> Result<FanProfile, BackendError> {
     FanProfile::from_platform_token(&sysfs::read(myasus_core::PLATFORM_PROFILE_PATH)?)
 }
 
-/// Find the CPU thermal zone and return its temp in degrees C.
-/// Scans `/sys/class/thermal/thermal_zone*/type`, preferring the package/core
-/// sensors over the generic ACPI zone when a machine exposes several.
+/// The CPU temperature in degrees C, via the shared core reader (package/core
+/// sensors preferred over the generic ACPI zone; implausible sentinels dropped).
 pub fn read_cpu_temp() -> Option<f64> {
-    cpu_temp_in(std::path::Path::new("/sys/class/thermal"))
-}
-
-fn cpu_temp_in(thermal: &std::path::Path) -> Option<f64> {
-    // Best-first: package/core sensors track the CPU more accurately than acpitz.
-    let priority = ["x86_pkg_temp", "coretemp", "TCPU", "acpitz"];
-
-    let mut best: Option<(usize, f64)> = None;
-    for entry in std::fs::read_dir(thermal).ok()?.flatten() {
-        let zone = entry.path();
-        // A single flaky zone must not abort the scan, so skip on any read miss.
-        let Ok(zone_type) = std::fs::read_to_string(zone.join("type")) else {
-            continue;
-        };
-        let Some(rank) = priority.iter().position(|name| zone_type.trim() == *name) else {
-            continue;
-        };
-        let Ok(raw) = std::fs::read_to_string(zone.join("temp")) else {
-            continue;
-        };
-        let Ok(millideg) = raw.trim().parse::<f64>() else {
-            continue;
-        };
-        if best.is_none_or(|(seen, _)| rank < seen) {
-            best = Some((rank, millideg / 1000.0));
-        }
-    }
-    best.map(|(_, temp)| temp)
+    myasus_core::cpu_temp(std::path::Path::new(myasus_core::THERMAL_ROOT))
 }
 
 pub fn set_profile(profile: FanProfile) -> Result<(), BackendError> {
@@ -201,38 +173,7 @@ mod tests {
         assert!(scan_fans(dir.path()).is_empty());
     }
 
-    fn write_zone(root: &std::path::Path, name: &str, zone_type: &str, temp: Option<&str>) {
-        let zone = root.join(name);
-        std::fs::create_dir_all(&zone).unwrap();
-        std::fs::write(zone.join("type"), format!("{zone_type}\n")).unwrap();
-        if let Some(temp) = temp {
-            std::fs::write(zone.join("temp"), format!("{temp}\n")).unwrap();
-        }
-    }
-
-    #[test]
-    fn cpu_temp_prefers_package_over_acpitz_regardless_of_order() {
-        let dir = tempfile::tempdir().unwrap();
-        write_zone(dir.path(), "thermal_zone0", "acpitz", Some("55000"));
-        write_zone(dir.path(), "thermal_zone1", "x86_pkg_temp", Some("60000"));
-        assert_eq!(cpu_temp_in(dir.path()), Some(60.0));
-    }
-
-    #[test]
-    fn cpu_temp_skips_unreadable_zone_instead_of_aborting() {
-        let dir = tempfile::tempdir().unwrap();
-        // A matching zone with no temp file must not kill the whole scan.
-        write_zone(dir.path(), "thermal_zone0", "coretemp", None);
-        write_zone(dir.path(), "thermal_zone1", "TCPU", Some("47000"));
-        assert_eq!(cpu_temp_in(dir.path()), Some(47.0));
-    }
-
-    #[test]
-    fn cpu_temp_none_without_known_zones() {
-        let dir = tempfile::tempdir().unwrap();
-        write_zone(dir.path(), "thermal_zone0", "BAT0", Some("30000"));
-        assert!(cpu_temp_in(dir.path()).is_none());
-    }
+    // CPU-temp zone selection is now tested in myasus-core (cpu_temp/read_zones).
 
     #[test]
     fn scan_fans_reads_rpm_and_prefers_label() {

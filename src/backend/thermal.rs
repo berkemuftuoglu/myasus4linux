@@ -1,4 +1,6 @@
-//! Every thermal sensor the kernel exposes, not just the CPU package.
+//! Every thermal sensor the kernel exposes, not just the CPU package. The raw
+//! enumeration (and implausible-reading clamp) lives in `myasus-core`; this layer
+//! prettifies zone names and sorts hottest-first for the dashboard.
 
 use std::path::Path;
 
@@ -9,36 +11,17 @@ pub struct ThermalZone {
 }
 
 pub fn read_zones() -> Vec<ThermalZone> {
-    scan(Path::new("/sys/class/thermal"))
+    scan(Path::new(myasus_core::THERMAL_ROOT))
 }
 
 fn scan(root: &Path) -> Vec<ThermalZone> {
-    let mut zones = Vec::new();
-    let Ok(entries) = std::fs::read_dir(root) else {
-        return zones;
-    };
-    for entry in entries.flatten() {
-        let dir = entry.path();
-        if !dir
-            .file_name()
-            .and_then(|n| n.to_str())
-            .is_some_and(|n| n.starts_with("thermal_zone"))
-        {
-            continue;
-        }
-        let Ok(raw) = std::fs::read_to_string(dir.join("temp")) else {
-            continue;
-        };
-        let Ok(millideg) = raw.trim().parse::<i64>() else {
-            continue;
-        };
-        let label = std::fs::read_to_string(dir.join("type"))
-            .map_or_else(|_| "Sensor".to_owned(), |s| pretty(s.trim()));
-        zones.push(ThermalZone {
-            label,
-            celsius: millideg as f64 / 1000.0,
-        });
-    }
+    let mut zones: Vec<ThermalZone> = myasus_core::read_zones(root)
+        .into_iter()
+        .map(|z| ThermalZone {
+            label: pretty(&z.kind),
+            celsius: z.celsius,
+        })
+        .collect();
     zones.sort_by(|a, b| b.celsius.total_cmp(&a.celsius));
     zones
 }

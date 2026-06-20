@@ -243,6 +243,75 @@ impl DaemonState {
     }
 }
 
+/// Root under which the kernel exposes thermal zones.
+pub const THERMAL_ROOT: &str = "/sys/class/thermal";
+
+/// A thermal sensor reading: the raw zone `kind` (its `type` string) and Celsius.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Zone {
+    pub kind: String,
+    pub celsius: f64,
+}
+
+/// Read all thermal zones under `root` (normally [`THERMAL_ROOT`]). Implausibly
+/// high readings -- sensor-unavailable sentinels (~128C) or garbage -- are
+/// dropped so they can't trip the thermal guard or show a bogus temperature.
+/// One parse type (f64) shared by every caller.
+pub fn read_zones(root: &Path) -> Vec<Zone> {
+    const MAX_PLAUSIBLE_C: f64 = 115.0;
+    let mut zones = Vec::new();
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return zones;
+    };
+    for entry in entries.flatten() {
+        let dir = entry.path();
+        if !dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.starts_with("thermal_zone"))
+        {
+            continue;
+        }
+        let Ok(raw) = std::fs::read_to_string(dir.join("temp")) else {
+            continue;
+        };
+        let Ok(milli) = raw.trim().parse::<f64>() else {
+            continue;
+        };
+        let celsius = milli / 1000.0;
+        if celsius > MAX_PLAUSIBLE_C {
+            continue;
+        }
+        let kind = std::fs::read_to_string(dir.join("type"))
+            .map_or_else(|_| "Sensor".to_owned(), |s| s.trim().to_owned());
+        zones.push(Zone { kind, celsius });
+    }
+    zones
+}
+
+/// The hottest plausible zone, if any. The basis for the thermal guard/safeguard.
+pub fn hottest_zone(root: &Path) -> Option<Zone> {
+    read_zones(root)
+        .into_iter()
+        .max_by(|a, b| a.celsius.total_cmp(&b.celsius))
+}
+
+/// The CPU temperature, preferring package/core sensors over the generic ACPI
+/// zone when several exist.
+pub fn cpu_temp(root: &Path) -> Option<f64> {
+    const PRIORITY: [&str; 4] = ["x86_pkg_temp", "coretemp", "TCPU", "acpitz"];
+    read_zones(root)
+        .into_iter()
+        .filter_map(|z| {
+            PRIORITY
+                .iter()
+                .position(|p| *p == z.kind)
+                .map(|rank| (rank, z.celsius))
+        })
+        .min_by_key(|(rank, _)| *rank)
+        .map(|(_, c)| c)
+}
+
 /// Any thermal zone at or above this (Celsius) forces maximum cooling regardless
 /// of the user's chosen profile. Shared by the GUI safeguard and the daemon's
 /// headless guard so both agree on the policy.
@@ -486,6 +555,27 @@ mod tests {
         assert_eq!(thermal_override(90.0, 2), Some(1));
         assert_eq!(thermal_override(89.9, 0), None);
         assert_eq!(thermal_override(95.0, 1), None); // already at performance
+    }
+
+    fn mk_zone(root: &Path, name: &str, kind: &str, milli: &str) {
+        let z = root.join(name);
+        std::fs::create_dir_all(&z).unwrap();
+        std::fs::write(z.join("type"), format!("{kind}\n")).unwrap();
+        std::fs::write(z.join("temp"), format!("{milli}\n")).unwrap();
+    }
+
+    #[test]
+    fn thermal_clamps_sentinel_and_prioritises_cpu_zone() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        mk_zone(root, "thermal_zone0", "acpitz", "55000");
+        mk_zone(root, "thermal_zone1", "x86_pkg_temp", "61000");
+        mk_zone(root, "thermal_zone2", "iwlwifi", "128000"); // sensor-unavailable sentinel
+        // The 128C sentinel must be dropped so it can't trip the guard.
+        assert_eq!(hottest_zone(root).map(|z| z.celsius), Some(61.0));
+        // CPU temp prefers x86_pkg_temp over acpitz regardless of order.
+        assert_eq!(cpu_temp(root), Some(61.0));
+        assert_eq!(read_zones(root).len(), 2);
     }
 
     #[test]

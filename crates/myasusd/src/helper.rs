@@ -214,27 +214,10 @@ fn platform_profile_supports(token: &str) -> bool {
         .is_ok_and(|s| s.split_whitespace().any(|c| c == token))
 }
 
-/// The hottest thermal zone in Celsius, scanning every `thermal_zone*`. `None`
-/// when none are readable.
+/// The hottest plausible thermal zone in Celsius, via the shared core reader
+/// (implausible sentinels like 128C dropped). `None` when none are readable.
 fn thermal_max_celsius() -> Option<f64> {
-    let mut max: Option<f64> = None;
-    for entry in std::fs::read_dir("/sys/class/thermal").ok()?.flatten() {
-        let p = entry.path();
-        if !p
-            .file_name()
-            .and_then(|n| n.to_str())
-            .is_some_and(|n| n.starts_with("thermal_zone"))
-        {
-            continue;
-        }
-        if let Ok(milli) = std::fs::read_to_string(p.join("temp")) {
-            if let Ok(v) = milli.trim().parse::<f64>() {
-                let c = v / 1000.0;
-                max = Some(max.map_or(c, |m| m.max(c)));
-            }
-        }
-    }
-    max
+    myasus_core::hottest_zone(Path::new(myasus_core::THERMAL_ROOT)).map(|z| z.celsius)
 }
 
 /// The active profile as a canonical value (0=balanced, 1=performance,
