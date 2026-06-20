@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use myasus_core::Op;
+use myasus_core::{DaemonState, Op};
 use zbus::message::Header;
 use zbus_polkit::policykit1::{AuthorityProxy, CheckAuthorizationFlags, Subject};
 
@@ -10,9 +10,10 @@ const ACTION_FAN: &str = "io.github.berkmuftuoglu.MyAsus4Linux.Helper.SetPerform
 const ACTION_KBD: &str = "io.github.berkmuftuoglu.MyAsus4Linux.Helper.SetKeyboardBacklight";
 
 /// Root-owned state, provided by the unit's `StateDirectory=myasus4linux`. The
-/// charge limit is recorded here so it survives a reboot without a GUI or any
-/// `pkexec` install step.
-const CHARGE_STATE_FILE: &str = "/var/lib/myasus4linux/charge_threshold";
+/// persisted settings (charge limit, fan profile, keyboard backlight) live here
+/// so they survive a reboot and are re-applied on resume, with no GUI involved.
+/// A legacy bare-number charge file is still read transparently.
+const STATE_FILE: &str = "/var/lib/myasus4linux/state";
 
 #[derive(Debug, thiserror::Error)]
 enum HelperError {
@@ -103,11 +104,31 @@ async fn apply(
 ) -> Result<(), HelperError> {
     authorize(connection, header, action_id).await?;
     op.validate()?;
+    // Do the privileged write (and persist) on a blocking thread so neither
+    // stalls the async D-Bus executor. The map_err handles a panicked worker;
+    // the inner `?`s handle the write/persist themselves failing.
+    tokio::task::spawn_blocking(move || -> Result<(), HelperError> {
+        perform_write(op)?;
+        persist_op(op);
+        Ok(())
+    })
+    .await
+    .map_err(|join| HelperError::Write {
+        path: "worker".to_owned(),
+        source: std::io::Error::other(join),
+    })??;
+    Ok(())
+}
+
+/// Resolve the target + payload, refuse anything that is not an absolute /sys
+/// attribute, skip a redundant write, then write. Synchronous: called on a
+/// blocking thread from `apply`, and directly at startup/resume from
+/// [`restore_state`].
+fn perform_write(op: Op) -> Result<(), HelperError> {
     let (target, payload) = resolve_write(op)?;
     // Defence in depth: the path is never caller-supplied (fixed per Op, or built
     // from the kernel's own enumeration), but a privileged writer must still
-    // refuse anything that is not an absolute /sys attribute, so a bug can't turn
-    // into an arbitrary write.
+    // refuse anything outside /sys so a bug can't turn into an arbitrary write.
     if !target.is_absolute() || !target.starts_with("/sys/") {
         return Err(HelperError::Write {
             path: target.display().to_string(),
@@ -117,37 +138,18 @@ async fn apply(
             ),
         });
     }
-    let value = op.raw_value();
-    let persist = matches!(op, Op::ChargeThreshold(_));
-    // Run the sysfs (and state-file) writes on a blocking thread so they never
-    // stall the async D-Bus executor. The outer map_err handles a panicked
-    // worker; the inner one handles the write itself failing.
-    let write_path = target.clone();
-    let to_write = payload.clone();
-    tokio::task::spawn_blocking(move || -> std::io::Result<()> {
-        // Skip when the attribute already holds this exact value (int or string),
-        // so we don't churn the EC rewriting an unchanged setting.
-        let already = std::fs::read_to_string(&write_path)
-            .ok()
-            .is_some_and(|s| s.trim() == to_write);
-        if !already {
-            std::fs::write(&write_path, &to_write)?;
-        }
-        if persist {
-            persist_charge_threshold(value);
-        }
-        Ok(())
-    })
-    .await
-    .map_err(|join| HelperError::Write {
-        path: target.display().to_string(),
-        source: std::io::Error::other(join),
-    })?
-    .map_err(|source| HelperError::Write {
-        path: target.display().to_string(),
-        source,
-    })?;
-    tracing::info!("wrote {payload} to {}", target.display());
+    // Skip when the attribute already holds this exact value (int or string), so
+    // we don't churn the EC rewriting an unchanged setting.
+    let already = std::fs::read_to_string(&target)
+        .ok()
+        .is_some_and(|s| s.trim() == payload);
+    if !already {
+        std::fs::write(&target, &payload).map_err(|source| HelperError::Write {
+            path: target.display().to_string(),
+            source,
+        })?;
+        tracing::info!("wrote {payload} to {}", target.display());
+    }
     Ok(())
 }
 
@@ -191,65 +193,51 @@ fn platform_profile_supports(token: &str) -> bool {
         .is_ok_and(|s| s.split_whitespace().any(|c| c == token))
 }
 
-/// Record the charge limit for [`restore_charge_threshold`]. Best-effort: a
-/// failure to persist must never fail the write the user just authorised.
-fn persist_charge_threshold(value: u8) {
-    if let Err(e) = write_state(Path::new(CHARGE_STATE_FILE), value) {
-        tracing::warn!("could not persist charge threshold: {e}");
+/// Record an op into the persisted state. Best-effort: a failed persist must
+/// never fail the privileged write the user just authorised.
+fn persist_op(op: Op) {
+    let mut state = load_state();
+    state.set(op);
+    if let Err(e) = save_state(state) {
+        tracing::warn!("could not persist state: {e}");
     }
 }
 
-/// Write the charge value to `path`, creating its parent directory. Path is
-/// injectable so the round-trip can be exercised without touching `/var/lib`.
-///
-/// Atomic: write a sibling temp then rename over the target. A crash or
-/// power-loss mid-write can then never leave a half-written threshold that the
-/// daemon would read back as garbage on the next boot.
-fn write_state(path: &Path, value: u8) -> std::io::Result<()> {
+fn load_state() -> DaemonState {
+    std::fs::read_to_string(STATE_FILE)
+        .map(|raw| DaemonState::parse(&raw))
+        .unwrap_or_default()
+}
+
+fn save_state(state: DaemonState) -> std::io::Result<()> {
+    atomic_write(Path::new(STATE_FILE), &state.serialize())
+}
+
+/// Atomic write: temp + rename, so a crash mid-write can't leave a half-written
+/// file. Parent dir is created if missing. Path is injectable for tests.
+fn atomic_write(path: &Path, contents: &str) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, value.to_string())?;
+    std::fs::write(&tmp, contents)?;
     std::fs::rename(&tmp, path)
 }
 
-/// Read a small unsigned value from a sysfs attribute, `None` if missing or
-/// unparseable. Used to skip rewriting a value the EC already holds.
-fn read_sysfs_u8(path: &Path) -> Option<u8> {
-    std::fs::read_to_string(path).ok()?.trim().parse().ok()
-}
-
-/// Parse and range-check persisted state. None for malformed or out-of-range
-/// contents. Pure, so it is unit-tested directly.
-fn parse_persisted(raw: &str) -> Option<u8> {
-    let value = raw.trim().parse::<u8>().ok()?;
-    Op::ChargeThreshold(value).validate().ok()?;
-    Some(value)
-}
-
-/// Re-apply the persisted charge limit at daemon startup, so it is restored on
-/// boot before any GUI runs. Silent when nothing has ever been saved.
-pub fn restore_charge_threshold() {
-    let Ok(raw) = std::fs::read_to_string(CHARGE_STATE_FILE) else {
-        return; // nothing saved yet
-    };
-    let Some(value) = parse_persisted(&raw) else {
-        tracing::warn!("ignoring malformed or out-of-range persisted charge threshold {raw:?}");
-        return;
-    };
-    let Some(target) = myasus_core::charge_threshold_path(Path::new(myasus_core::POWER_SUPPLY_ROOT))
-    else {
-        tracing::warn!("no battery charge-threshold control found; cannot restore");
-        return;
-    };
-    if read_sysfs_u8(&target) == Some(value) {
-        tracing::info!("charge threshold already {value} on startup, nothing to restore");
-        return;
-    }
-    match std::fs::write(&target, value.to_string()) {
-        Ok(()) => tracing::info!("restored charge threshold {value} on startup"),
-        Err(e) => tracing::warn!("could not restore charge threshold: {e}"),
+/// Re-apply every persisted setting: at daemon startup (before any GUI) and
+/// after resume from suspend, since the EC forgets the charge limit across sleep
+/// on many laptops. Each op is validated and written independently; one failure
+/// is logged and never aborts the rest.
+pub fn restore_state() {
+    for op in load_state().ops() {
+        if op.validate().is_err() {
+            tracing::warn!("ignoring out-of-range persisted value: {op:?}");
+            continue;
+        }
+        match perform_write(op) {
+            Ok(()) => tracing::info!("restored {op:?}"),
+            Err(e) => tracing::warn!("could not restore {op:?}: {e}"),
+        }
     }
 }
 
@@ -283,37 +271,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn persisted_state_round_trips_through_a_file() {
+    fn atomic_write_round_trips_and_leaves_no_temp() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("state/charge_threshold");
-        write_state(&path, 70).unwrap();
-        let raw = std::fs::read_to_string(&path).unwrap();
-        assert_eq!(parse_persisted(&raw), Some(70));
-        // The atomic write must not leave its temp file behind.
+        let path = dir.path().join("sub/state");
+        let state = DaemonState {
+            charge_threshold: Some(80),
+            fan_profile: Some(1),
+            kbd_backlight: None,
+        };
+        atomic_write(&path, &state.serialize()).unwrap();
+        let back = DaemonState::parse(&std::fs::read_to_string(&path).unwrap());
+        assert_eq!(back, state);
         assert!(!path.with_extension("tmp").exists());
     }
 
     #[test]
-    fn write_state_overwrites_atomically() {
+    fn atomic_write_overwrites() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("charge_threshold");
-        write_state(&path, 60).unwrap();
-        write_state(&path, 85).unwrap();
-        assert_eq!(parse_persisted(&std::fs::read_to_string(&path).unwrap()), Some(85));
+        let path = dir.path().join("state");
+        atomic_write(&path, "version=1\ncharge_threshold=60\n").unwrap();
+        atomic_write(&path, "version=1\ncharge_threshold=85\n").unwrap();
+        let back = DaemonState::parse(&std::fs::read_to_string(&path).unwrap());
+        assert_eq!(back.charge_threshold, Some(85));
         assert!(!path.with_extension("tmp").exists());
-    }
-
-    #[test]
-    fn parse_persisted_accepts_in_range() {
-        assert_eq!(parse_persisted("80"), Some(80));
-        assert_eq!(parse_persisted(" 60\n"), Some(60));
-    }
-
-    #[test]
-    fn parse_persisted_rejects_out_of_range_and_garbage() {
-        assert_eq!(parse_persisted("39"), None); // below the 40 floor
-        assert_eq!(parse_persisted("250"), None); // parses as u8 but above 100
-        assert_eq!(parse_persisted("xyz"), None);
-        assert_eq!(parse_persisted(""), None);
     }
 }

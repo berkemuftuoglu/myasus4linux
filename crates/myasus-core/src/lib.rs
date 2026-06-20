@@ -180,6 +180,83 @@ pub fn on_external_power(root: &Path) -> Option<bool> {
     saw_online.then_some(online)
 }
 
+/// The daemon's persisted settings, re-applied on boot and after resume. A
+/// plain `key=value` text format (not a real config language) keeps this crate
+/// dependency-free; unknown keys are ignored for forward compatibility, and a
+/// bare integer is read as the legacy charge-only file.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DaemonState {
+    pub charge_threshold: Option<u8>,
+    pub fan_profile: Option<u8>,
+    pub kbd_backlight: Option<u8>,
+}
+
+impl DaemonState {
+    pub fn parse(raw: &str) -> Self {
+        // Legacy charge-only file: a bare number with no key.
+        if let Ok(v) = raw.trim().parse::<u8>() {
+            return Self {
+                charge_threshold: Some(v),
+                ..Self::default()
+            };
+        }
+        let mut state = Self::default();
+        for line in raw.lines() {
+            let Some((key, value)) = line.split_once('=') else {
+                continue;
+            };
+            let value = value.trim().parse().ok();
+            match key.trim() {
+                "charge_threshold" => state.charge_threshold = value,
+                "fan_profile" => state.fan_profile = value,
+                "kbd_backlight" => state.kbd_backlight = value,
+                _ => {}
+            }
+        }
+        state
+    }
+
+    pub fn serialize(&self) -> String {
+        use std::fmt::Write as _;
+        let mut out = String::from("version=1\n");
+        for (key, value) in [
+            ("charge_threshold", self.charge_threshold),
+            ("fan_profile", self.fan_profile),
+            ("kbd_backlight", self.kbd_backlight),
+        ] {
+            if let Some(v) = value {
+                let _ = writeln!(out, "{key}={v}");
+            }
+        }
+        out
+    }
+
+    /// Record an op's value into the matching field.
+    pub fn set(&mut self, op: Op) {
+        match op {
+            Op::ChargeThreshold(v) => self.charge_threshold = Some(v),
+            Op::FanProfile(v) => self.fan_profile = Some(v),
+            Op::KeyboardBacklight(v) => self.kbd_backlight = Some(v),
+        }
+    }
+
+    /// The persisted settings as ops, charge first so the limit is restored
+    /// before anything else.
+    pub fn ops(&self) -> Vec<Op> {
+        let mut ops = Vec::new();
+        if let Some(v) = self.charge_threshold {
+            ops.push(Op::ChargeThreshold(v));
+        }
+        if let Some(v) = self.fan_profile {
+            ops.push(Op::FanProfile(v));
+        }
+        if let Some(v) = self.kbd_backlight {
+            ops.push(Op::KeyboardBacklight(v));
+        }
+        ops
+    }
+}
+
 /// The `platform_profile` token for a canonical fan-profile value (0=balanced,
 /// 1=performance, 2=quiet), or `None` if out of range.
 pub fn platform_profile_token(value: u8) -> Option<&'static str> {
@@ -355,6 +432,51 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("input3::scrolllock")).unwrap();
         assert_eq!(kbd_backlight_path(dir.path()), None);
+    }
+
+    #[test]
+    fn state_round_trips_all_fields() {
+        let s = DaemonState {
+            charge_threshold: Some(80),
+            fan_profile: Some(1),
+            kbd_backlight: Some(2),
+        };
+        assert_eq!(DaemonState::parse(&s.serialize()), s);
+    }
+
+    #[test]
+    fn state_reads_legacy_bare_charge_file() {
+        assert_eq!(
+            DaemonState::parse("80\n"),
+            DaemonState {
+                charge_threshold: Some(80),
+                ..DaemonState::default()
+            }
+        );
+    }
+
+    #[test]
+    fn state_ignores_unknown_keys_and_unparseable_values() {
+        let s = DaemonState::parse("version=1\ncharge_threshold=70\nfuture_key=x\nfan_profile=oops\n");
+        assert_eq!(s.charge_threshold, Some(70));
+        assert_eq!(s.fan_profile, None);
+    }
+
+    #[test]
+    fn state_ops_charge_first() {
+        let s = DaemonState {
+            charge_threshold: Some(80),
+            fan_profile: Some(1),
+            kbd_backlight: Some(2),
+        };
+        assert_eq!(
+            s.ops(),
+            vec![
+                Op::ChargeThreshold(80),
+                Op::FanProfile(1),
+                Op::KeyboardBacklight(2)
+            ]
+        );
     }
 
     fn mk_battery(root: &Path, name: &str, energy_full_design: Option<u64>, threshold: Option<u8>) {

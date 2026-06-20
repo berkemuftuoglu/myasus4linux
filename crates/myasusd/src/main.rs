@@ -30,9 +30,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .init();
 
-    // Re-apply the saved charge limit first, so a boot-time start restores it
+    // Re-apply all saved settings first, so a boot-time start restores them
     // before anything else; then serve requests for the rest of the session.
-    helper::restore_charge_threshold();
+    helper::restore_state();
 
     // Held (not `_`) so the connection lives until shutdown; dropping it would
     // release the bus name.
