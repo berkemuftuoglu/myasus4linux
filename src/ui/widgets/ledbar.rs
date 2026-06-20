@@ -2,11 +2,9 @@
 //! green through amber to red. Reads like rack-gear metering — denser and far
 //! less generic than a smooth fill. Used for per-core load and backlight level.
 
-use std::cell::Cell;
-use std::rc::Rc;
-
 use gtk::prelude::*;
 
+use super::anim::Animator;
 use super::draw;
 use crate::ui::palette::{self, Rgb};
 
@@ -24,9 +22,8 @@ enum Mode {
 
 pub struct LedBar {
     pub root: gtk::Box,
-    bar: gtk::DrawingArea,
     value_label: gtk::Label,
-    frac: Rc<Cell<f64>>,
+    anim: Animator,
 }
 
 impl LedBar {
@@ -63,34 +60,20 @@ impl LedBar {
         root.append(&bar);
         root.append(&value_label);
 
-        let frac = Rc::new(Cell::new(0.0));
-        let shown = Rc::new(Cell::new(0.0));
-
-        let d_shown = Rc::clone(&shown);
-        bar.set_draw_func(move |_, cr, w, h| draw(cr, w, h, d_shown.get(), mode));
-
-        let (a_frac, a_shown) = (Rc::clone(&frac), Rc::clone(&shown));
-        bar.add_tick_callback(move |area, _| {
-            let (t, s) = (a_frac.get(), a_shown.get());
-            if (t - s).abs() > 0.002 {
-                a_shown.set(s + (t - s) * 0.22);
-                area.queue_draw();
-            }
-            glib::ControlFlow::Continue
-        });
+        let anim = Animator::new(bar.clone(), 0.22);
+        let a = anim.clone();
+        bar.set_draw_func(move |_, cr, w, h| draw(cr, w, h, a.shown(), mode));
 
         Self {
             root,
-            bar,
             value_label,
-            frac,
+            anim,
         }
     }
 
     pub fn set(&self, frac: f64, value_text: &str) {
-        self.frac.set(frac.clamp(0.0, 1.0));
         self.value_label.set_text(value_text);
-        self.bar.queue_draw();
+        self.anim.set_target(frac.clamp(0.0, 1.0));
     }
 }
 

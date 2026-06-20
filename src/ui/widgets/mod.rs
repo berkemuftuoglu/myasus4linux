@@ -1,3 +1,4 @@
+pub mod anim;
 pub mod battery_cell;
 pub mod chart;
 pub mod draw;

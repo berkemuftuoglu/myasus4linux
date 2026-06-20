@@ -7,12 +7,13 @@ use std::rc::Rc;
 
 use gtk::prelude::*;
 
+use super::anim::Animator;
 use super::draw;
 use crate::ui::palette;
 
 pub struct BatteryCell {
     pub area: gtk::DrawingArea,
-    target: Rc<Cell<f64>>,
+    anim: Animator,
     charging: Rc<Cell<bool>>,
     big: Rc<RefCell<String>>,
     sub: Rc<RefCell<String>>,
@@ -24,43 +25,24 @@ impl BatteryCell {
         area.set_content_width(size);
         area.set_content_height(size);
 
-        let target = Rc::new(Cell::new(0.0));
-        let shown = Rc::new(Cell::new(0.0));
         let charging = Rc::new(Cell::new(false));
         let big = Rc::new(RefCell::new(String::new()));
         let sub = Rc::new(RefCell::new(String::new()));
 
-        let (d_shown, d_chg, d_big, d_sub) = (
-            Rc::clone(&shown),
+        let anim = Animator::new(area.clone(), 0.18);
+        let (a, d_chg, d_big, d_sub) = (
+            anim.clone(),
             Rc::clone(&charging),
             Rc::clone(&big),
             Rc::clone(&sub),
         );
         area.set_draw_func(move |_, cr, w, h| {
-            draw(
-                cr,
-                w,
-                h,
-                d_shown.get(),
-                d_chg.get(),
-                &d_big.borrow(),
-                &d_sub.borrow(),
-            );
-        });
-
-        let (a_target, a_shown) = (Rc::clone(&target), Rc::clone(&shown));
-        area.add_tick_callback(move |area, _| {
-            let (t, s) = (a_target.get(), a_shown.get());
-            if (t - s).abs() > 0.002 {
-                a_shown.set(s + (t - s) * 0.18);
-                area.queue_draw();
-            }
-            glib::ControlFlow::Continue
+            draw(cr, w, h, a.shown(), d_chg.get(), &d_big.borrow(), &d_sub.borrow());
         });
 
         Self {
             area,
-            target,
+            anim,
             charging,
             big,
             sub,
@@ -68,11 +50,10 @@ impl BatteryCell {
     }
 
     pub fn set(&self, frac: f64, charging: bool, big: &str, sub: &str) {
-        self.target.set(frac.clamp(0.0, 1.0));
         self.charging.set(charging);
         big.clone_into(&mut self.big.borrow_mut());
         sub.clone_into(&mut self.sub.borrow_mut());
-        self.area.queue_draw();
+        self.anim.set_target(frac.clamp(0.0, 1.0));
     }
 }
 
