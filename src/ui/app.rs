@@ -29,6 +29,8 @@ pub enum AppInput {
     ShowToast(String),
     /// A confirmation that an action succeeded (logged at info).
     Notify(String),
+    /// Result of the startup daemon-reachability probe; `false` warns once.
+    DaemonProbed(bool),
 }
 
 #[relm4::component(pub)]
@@ -187,6 +189,13 @@ impl SimpleComponent for App {
         };
 
         let widgets = view_output!();
+
+        // Probe the privileged daemon off the main thread; warn once if it's
+        // missing instead of erroring on the user's first write.
+        crate::ui::offload(sender.input_sender(), || {
+            AppInput::DaemonProbed(crate::backend::ipc::daemon_version().is_ok())
+        });
+
         ComponentParts { model, widgets }
     }
 
@@ -199,6 +208,14 @@ impl SimpleComponent for App {
             AppInput::Notify(text) => {
                 tracing::info!("{text}");
                 self.toaster.add_toast(adw::Toast::new(&text));
+            }
+            AppInput::DaemonProbed(reachable) => {
+                if !reachable {
+                    tracing::warn!("myasusd not reachable at startup");
+                    self.toaster.add_toast(adw::Toast::new(
+                        "Background service unreachable -- charge, profile and keyboard controls are disabled. Is myasusd installed and running?",
+                    ));
+                }
             }
         }
     }

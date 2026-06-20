@@ -105,6 +105,13 @@ impl Helper {
         )
         .await?)
     }
+
+    /// The daemon's version, so the GUI can probe reachability at startup and
+    /// surface a version skew instead of throwing a raw error on the first write.
+    #[expect(clippy::unused_self, reason = "zbus interface methods take &self")]
+    fn version(&self) -> String {
+        env!("CARGO_PKG_VERSION").to_owned()
+    }
 }
 
 /// Authorise the caller for `action_id`, then validate and perform `op`.

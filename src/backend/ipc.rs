@@ -17,6 +17,7 @@ trait Helper {
     fn set_charge_threshold(&self, value: u8) -> zbus::Result<()>;
     fn set_fan_profile(&self, value: u8) -> zbus::Result<()>;
     fn set_keyboard_backlight(&self, value: u8) -> zbus::Result<()>;
+    fn version(&self) -> zbus::Result<String>;
 }
 
 /// One shared system-bus connection for the whole process. Opening a connection
@@ -51,4 +52,11 @@ pub fn set_keyboard_backlight(value: u8) -> Result<(), BackendError> {
     proxy()?
         .set_keyboard_backlight(value)
         .map_err(BackendError::Daemon)
+}
+
+/// Probe that the privileged daemon is reachable (returns its version). Used at
+/// startup to warn once if it's missing, rather than throwing a raw error on the
+/// user's first write.
+pub fn daemon_version() -> Result<String, BackendError> {
+    proxy()?.version().map_err(BackendError::Daemon)
 }
