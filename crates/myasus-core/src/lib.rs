@@ -253,6 +253,37 @@ pub fn thermal_override(max_temp_c: f64, current: u8) -> Option<u8> {
     (max_temp_c >= THERMAL_LIMIT_C && current != PERFORMANCE).then_some(PERFORMANCE)
 }
 
+/// What the daemon's thermal guard should do this tick.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThermalAction {
+    None,
+    /// Force maximum cooling (performance).
+    Force,
+    /// Cooled down: restore this canonical profile (the snapshot taken when the
+    /// override began; the daemon may prefer the persisted user intent).
+    Restore(u8),
+}
+
+/// Stateful thermal-guard decision, kept pure so the hysteresis is unit-tested.
+/// `overridden` is the profile we forced away from (None when not overriding).
+/// Returns the action and the new override state. Force at/above the limit,
+/// restore only once it cools a margin below (no flapping), hold in between, and
+/// relinquish without touching anything if the profile changed out from under us
+/// (the user took control mid-episode).
+pub fn guard_step(max_c: f64, current: u8, overridden: Option<u8>) -> (ThermalAction, Option<u8>) {
+    const PERFORMANCE: u8 = 1;
+    const RESTORE_BELOW_C: f64 = THERMAL_LIMIT_C - 5.0;
+    match overridden {
+        None if max_c >= THERMAL_LIMIT_C && current != PERFORMANCE => {
+            (ThermalAction::Force, Some(current))
+        }
+        None => (ThermalAction::None, None),
+        Some(_) if current != PERFORMANCE => (ThermalAction::None, None),
+        Some(snapshot) if max_c < RESTORE_BELOW_C => (ThermalAction::Restore(snapshot), None),
+        Some(snapshot) => (ThermalAction::None, Some(snapshot)),
+    }
+}
+
 /// Canonical fan-profile value for a `platform_profile` token (0=balanced,
 /// 1=performance, 2=quiet, where `low-power` collapses into quiet), or `None`
 /// for an unknown token. The single mapping the GUI and daemon both use.
@@ -452,6 +483,19 @@ mod tests {
         assert_eq!(thermal_override(90.0, 2), Some(1));
         assert_eq!(thermal_override(89.9, 0), None);
         assert_eq!(thermal_override(95.0, 1), None); // already at performance
+    }
+
+    #[test]
+    fn guard_step_hysteresis_and_relinquish() {
+        use ThermalAction::{Force, None as NoAct, Restore};
+        // not overriding yet
+        assert_eq!(guard_step(89.9, 0, None), (NoAct, None)); // below limit
+        assert_eq!(guard_step(90.0, 0, None), (Force, Some(0))); // force, remember balanced
+        assert_eq!(guard_step(95.0, 1, None), (NoAct, None)); // already performance
+        // overriding (snapshot = balanced/0)
+        assert_eq!(guard_step(86.0, 1, Some(0)), (NoAct, Some(0))); // in hysteresis band -> hold
+        assert_eq!(guard_step(84.9, 1, Some(0)), (Restore(0), None)); // cooled -> restore
+        assert_eq!(guard_step(84.0, 2, Some(0)), (NoAct, None)); // user switched to quiet -> relinquish
     }
 
     #[test]

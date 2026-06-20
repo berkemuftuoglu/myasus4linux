@@ -251,35 +251,38 @@ fn current_profile_raw() -> Option<u8> {
 /// (never persisted) and never escalates privilege -- the daemon acts on its own.
 /// asusctl deliberately leaves this to the EC; we add it as a safety net.
 pub fn spawn_thermal_guard() {
-    // Restore the user's profile once it cools a few degrees below the limit, not
-    // exactly at it, so we don't flap on and off around the threshold.
-    const RESTORE_BELOW_C: f64 = myasus_core::THERMAL_LIMIT_C - 5.0;
     const PERFORMANCE: u8 = 1;
     tokio::spawn(async move {
+        // First tick fires immediately, so a hot boot/restart is re-evaluated at
+        // once (restore_state has already re-applied the user's intended profile).
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(5));
-        // The profile we forced away from, restored once things cool down.
         let mut overridden: Option<u8> = None;
         loop {
             tick.tick().await;
-            let Ok(Some(max)) = tokio::task::spawn_blocking(thermal_max_celsius).await else {
+            let Some((max, cur)) = tokio::task::spawn_blocking(|| Some((thermal_max_celsius()?, current_profile_raw()?)))
+                .await
+                .ok()
+                .flatten()
+            else {
                 continue;
             };
-            if max >= myasus_core::THERMAL_LIMIT_C && overridden.is_none() {
-                let cur = tokio::task::spawn_blocking(current_profile_raw)
-                    .await
-                    .ok()
-                    .flatten();
-                if let Some(cur) = cur.filter(|&c| myasus_core::thermal_override(max, c).is_some()) {
+            let (action, next) = myasus_core::guard_step(max, cur, overridden);
+            overridden = next;
+            match action {
+                myasus_core::ThermalAction::Force => {
                     tracing::warn!("thermal guard: {max:.0}C over limit, forcing performance (was {cur})");
-                    if write_profile(PERFORMANCE).await {
-                        overridden = Some(cur);
+                    if !write_profile(PERFORMANCE).await {
+                        overridden = None; // write failed -- don't claim we own the override
                     }
                 }
-            } else if max < RESTORE_BELOW_C {
-                if let Some(prev) = overridden.take() {
-                    tracing::info!("thermal guard: cooled to {max:.0}C, restoring profile {prev}");
-                    write_profile(prev).await;
+                myasus_core::ThermalAction::Restore(snapshot) => {
+                    // Restore the user's persisted intent, falling back to what we
+                    // snapshotted at override time if nothing was ever saved.
+                    let target = load_state().fan_profile.unwrap_or(snapshot);
+                    tracing::info!("thermal guard: cooled to {max:.0}C, restoring profile {target}");
+                    write_profile(target).await;
                 }
+                myasus_core::ThermalAction::None => {}
             }
         }
     });
