@@ -341,12 +341,32 @@ fn atomic_write(path: &Path, contents: &str) -> std::io::Result<()> {
 /// on many laptops. Each op is validated and written independently; one failure
 /// is logged and never aborts the rest.
 pub fn restore_state() {
-    for op in load_state().ops() {
+    let state = load_state();
+    for op in state.ops() {
         // perform_write validates; an out-of-range persisted value surfaces here
         // as a write error and is logged, not silently applied.
         match perform_write(op) {
             Ok(()) => tracing::info!("restored {op:?}"),
             Err(e) => tracing::warn!("could not restore {op:?}: {e}"),
+        }
+    }
+
+    // Safeguard #1: on first run (nothing persisted) default the charge limit to
+    // 80% when the control exists, so battery longevity is protected out of the
+    // box. Persisted so it's a one-time default the user can then override.
+    let has_charge_control =
+        myasus_core::charge_threshold_path(Path::new(myasus_core::POWER_SUPPLY_ROOT)).is_some();
+    if state.charge_threshold.is_none() && has_charge_control {
+        let op = Op::ChargeThreshold(myasus_core::CHARGE_DEFAULT);
+        match perform_write(op) {
+            Ok(()) => {
+                persist_op(op);
+                tracing::info!(
+                    "first run: defaulted charge limit to {}%",
+                    myasus_core::CHARGE_DEFAULT
+                );
+            }
+            Err(e) => tracing::warn!("could not apply first-run charge default: {e}"),
         }
     }
 }

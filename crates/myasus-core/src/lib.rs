@@ -50,6 +50,9 @@ pub const DBUS_PATH: &str = "/io/github/berkmuftuoglu/MyAsus4Linux/Helper";
 /// daemon and the GUI agree on one definition instead of three.
 pub const CHARGE_MIN: u8 = 40;
 pub const CHARGE_MAX: u8 = 100;
+/// Safeguard #1: the charge limit applied on first run (no persisted value) when
+/// the control exists, so battery longevity is protected out of the box.
+pub const CHARGE_DEFAULT: u8 = 80;
 
 /// One privileged write. Carries its own value; the target path is fixed per
 /// variant and never comes from the caller.

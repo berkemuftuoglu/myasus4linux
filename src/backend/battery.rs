@@ -4,7 +4,7 @@ use super::error::BackendError;
 
 pub const THRESHOLD_MIN: u8 = myasus_core::CHARGE_MIN;
 pub const THRESHOLD_MAX: u8 = myasus_core::CHARGE_MAX;
-pub const THRESHOLD_DEFAULT: u8 = 80;
+pub const THRESHOLD_DEFAULT: u8 = myasus_core::CHARGE_DEFAULT;
 
 /// The resolved battery directory, or `None` on a machine without one. The
 /// device is not always `BAT0`, so it is enumerated rather than hardcoded.
