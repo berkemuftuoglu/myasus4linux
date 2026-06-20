@@ -325,15 +325,29 @@ fn save_state(state: DaemonState) -> std::io::Result<()> {
     atomic_write(Path::new(STATE_FILE), &state.serialize())
 }
 
-/// Atomic write: temp + rename, so a crash mid-write can't leave a half-written
-/// file. Parent dir is created if missing. Path is injectable for tests.
+/// Atomic + durable write: write a unique temp, fsync its contents, rename over
+/// the target, then fsync the directory so the rename itself survives power loss
+/// (rename only guarantees visibility atomicity, not durability) -- the exact
+/// failure this persisted state exists to survive. Path is injectable for tests.
 fn atomic_write(path: &Path, contents: &str) -> std::io::Result<()> {
+    use std::io::Write as _;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, contents)?;
-    std::fs::rename(&tmp, path)
+    // Unique temp so two writers can't clobber each other's scratch file.
+    let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
+    {
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(contents.as_bytes())?;
+        f.sync_all()?;
+    }
+    std::fs::rename(&tmp, path)?;
+    if let Some(parent) = path.parent() {
+        if let Ok(dir) = std::fs::File::open(parent) {
+            let _ = dir.sync_all();
+        }
+    }
+    Ok(())
 }
 
 /// Re-apply every persisted setting: at daemon startup (before any GUI) and
@@ -450,7 +464,7 @@ mod tests {
         atomic_write(&path, &state.serialize()).unwrap();
         let back = DaemonState::parse(&std::fs::read_to_string(&path).unwrap());
         assert_eq!(back, state);
-        assert!(!path.with_extension("tmp").exists());
+        assert!(!has_temp_leftover(&path));
     }
 
     #[test]
@@ -461,6 +475,15 @@ mod tests {
         atomic_write(&path, "version=1\ncharge_threshold=85\n").unwrap();
         let back = DaemonState::parse(&std::fs::read_to_string(&path).unwrap());
         assert_eq!(back.charge_threshold, Some(85));
-        assert!(!path.with_extension("tmp").exists());
+        assert!(!has_temp_leftover(&path));
+    }
+
+    /// True if any sibling temp file from `atomic_write` was left behind.
+    fn has_temp_leftover(path: &Path) -> bool {
+        let parent = path.parent().unwrap();
+        std::fs::read_dir(parent)
+            .unwrap()
+            .flatten()
+            .any(|e| e.file_name().to_string_lossy().contains("tmp"))
     }
 }

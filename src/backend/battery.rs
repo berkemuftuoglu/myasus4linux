@@ -7,9 +7,14 @@ pub const THRESHOLD_MAX: u8 = myasus_core::CHARGE_MAX;
 pub const THRESHOLD_DEFAULT: u8 = myasus_core::CHARGE_DEFAULT;
 
 /// The resolved battery directory, or `None` on a machine without one. The
-/// device is not always `BAT0`, so it is enumerated rather than hardcoded.
+/// device is not always `BAT0`, so it is enumerated rather than hardcoded, and
+/// cached -- a laptop's battery doesn't move at runtime, and this is hit on every
+/// 2s poll from multiple pages.
 pub fn battery_dir() -> Option<PathBuf> {
-    myasus_core::battery_dir(Path::new(myasus_core::POWER_SUPPLY_ROOT))
+    static CACHED: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+    CACHED
+        .get_or_init(|| myasus_core::battery_dir(Path::new(myasus_core::POWER_SUPPLY_ROOT)))
+        .clone()
 }
 
 fn read_attr<T: std::str::FromStr>(dir: &Path, attr: &str) -> Option<T> {

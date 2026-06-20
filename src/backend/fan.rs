@@ -168,6 +168,28 @@ mod tests {
     }
 
     #[test]
+    fn canonical_encoding_is_pinned_and_agrees_with_core() {
+        // The asus-wmi throttle_thermal_policy integer contract. The 90C thermal
+        // guard (const PERFORMANCE = 1) and the platform_profile token mapping in
+        // myasus-core all assume these exact values -- if any drift, this breaks.
+        assert_eq!(FanProfile::Balanced.as_raw(), 0);
+        assert_eq!(FanProfile::Performance.as_raw(), 1);
+        assert_eq!(FanProfile::Quiet.as_raw(), 2);
+        assert_eq!(
+            myasus_core::profile_from_token("performance"),
+            Some(FanProfile::Performance.as_raw())
+        );
+        assert_eq!(
+            myasus_core::profile_from_token("balanced"),
+            Some(FanProfile::Balanced.as_raw())
+        );
+        assert_eq!(
+            myasus_core::profile_from_token("quiet"),
+            Some(FanProfile::Quiet.as_raw())
+        );
+    }
+
+    #[test]
     fn fan_profile_rejects_invalid() {
         assert!(FanProfile::from_raw(3).is_err());
         assert!(FanProfile::from_raw(255).is_err());
