@@ -143,9 +143,7 @@ pub fn read_battery_info() -> Result<BatteryInfo, BackendError> {
         _ => None,
     };
 
-    let on_ac = myasus_core::ac_online_path(Path::new(myasus_core::POWER_SUPPLY_ROOT))
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .map(|s| s.trim() == "1");
+    let on_ac = myasus_core::on_external_power(Path::new(myasus_core::POWER_SUPPLY_ROOT));
 
     Ok(BatteryInfo {
         capacity,

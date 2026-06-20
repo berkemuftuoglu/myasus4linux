@@ -159,20 +159,25 @@ pub fn kbd_backlight_path(root: &Path) -> Option<PathBuf> {
         .map(|p| p.join("brightness"))
 }
 
-/// Resolve the AC adapter's `online` attribute under `root`, if a mains supply
-/// is present. The adapter's name varies (AC/ADP/ACAD), so it is matched by
-/// `type == Mains`, not by name.
-pub fn ac_online_path(root: &Path) -> Option<PathBuf> {
-    std::fs::read_dir(root)
-        .ok()?
-        .flatten()
-        .map(|e| e.path())
-        .find(|p| is_mains(p))
-        .map(|p| p.join("online"))
-}
-
-fn is_mains(dir: &Path) -> bool {
-    std::fs::read_to_string(dir.join("type")).is_ok_and(|t| t.trim().eq_ignore_ascii_case("Mains"))
+/// Whether the machine is on external power, by scanning every non-battery
+/// supply's `online` flag under `root`. This covers a classic `Mains` adapter
+/// (AC/ADP/ACAD) AND USB-C PD charging, where the source reports `type == USB`
+/// -- many thin ASUS laptops have no `Mains` device at all. `None` when nothing
+/// exposes an `online` attribute, so the caller cannot tell.
+pub fn on_external_power(root: &Path) -> Option<bool> {
+    let mut saw_online = false;
+    let mut online = false;
+    for entry in std::fs::read_dir(root).ok()?.flatten() {
+        let p = entry.path();
+        if is_battery(&p) {
+            continue;
+        }
+        if let Ok(v) = std::fs::read_to_string(p.join("online")) {
+            saw_online = true;
+            online |= v.trim() == "1";
+        }
+    }
+    saw_online.then_some(online)
 }
 
 /// The `platform_profile` token for a canonical fan-profile value (0=balanced,
@@ -314,14 +319,25 @@ mod tests {
     }
 
     #[test]
-    fn ac_online_path_matches_mains_by_type() {
+    fn external_power_detects_usb_c_not_just_mains() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         mk_battery(root, "BAT0", Some(50_000_000), Some(80));
-        let ac = root.join("ADP1");
-        std::fs::create_dir_all(&ac).unwrap();
-        std::fs::write(ac.join("type"), "Mains\n").unwrap();
-        assert_eq!(ac_online_path(root), Some(ac.join("online")));
+        // A USB-C PD source plugged in (type=USB, online=1), no Mains device --
+        // exactly the shape of a thin ASUS laptop on its charger.
+        let usbc = root.join("ucsi-source-psy");
+        std::fs::create_dir_all(&usbc).unwrap();
+        std::fs::write(usbc.join("type"), "USB\n").unwrap();
+        std::fs::write(usbc.join("online"), "1\n").unwrap();
+        assert_eq!(on_external_power(root), Some(true));
+    }
+
+    #[test]
+    fn external_power_none_without_online_attrs() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        mk_battery(root, "BAT0", Some(50_000_000), Some(80));
+        assert_eq!(on_external_power(root), None);
     }
 
     #[test]
