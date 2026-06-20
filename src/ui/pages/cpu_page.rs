@@ -105,7 +105,7 @@ impl SimpleComponent for CpuPage {
             freq_s: Stat::with_spark("Average Frequency", palette::GOOD),
             core_panel: Panel::new("Per-core Load and Frequency"),
             core_leds: Vec::new(),
-            temp_chart: Chart::new(140, 100.0, Rgb::new(1.0, 0.6, 0.2), "°"),
+            temp_chart: Chart::new(140, 110.0, Rgb::new(1.0, 0.6, 0.2), "°"),
             load_chart: Chart::new(140, 100.0, palette::GOOD, "%"),
         };
 

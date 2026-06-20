@@ -207,7 +207,7 @@ impl SimpleComponent for Overview {
             freq_s: Stat::with_spark("Avg Frequency", palette::GOOD),
             time_s: Stat::new("Time Remaining"),
             wear_s: Stat::new("Battery Wear"),
-            temp_chart: Chart::new(130, 100.0, Rgb::new(1.0, 0.6, 0.2), "°"),
+            temp_chart: Chart::new(130, 110.0, Rgb::new(1.0, 0.6, 0.2), "°"),
             load_chart: Chart::new(130, 100.0, palette::GOOD, "%"),
             core_panel: Panel::new("Per-core Load"),
             core_leds: Vec::new(),
@@ -362,7 +362,7 @@ impl Overview {
             if safeguards::thermal_override(hottest, self.current_profile).is_some() {
                 if !self.thermal_warned {
                     self.thermal_warned = true;
-                    let _ = sender.output(crate::ui::PageMsg::Error(format!(
+                    let _ = sender.output(crate::ui::PageMsg::Notice(format!(
                         "{hottest:.0}°C is too hot, forcing Performance to cool down"
                     )));
                 }
@@ -412,7 +412,7 @@ impl Overview {
         if safeguards::suggest_quiet(cap, plugged, self.current_profile) {
             if !self.low_batt_warned {
                 self.low_batt_warned = true;
-                let _ = sender.output(crate::ui::PageMsg::Error(
+                let _ = sender.output(crate::ui::PageMsg::Notice(
                     "Battery low, switch to Quiet mode to save power".to_owned(),
                 ));
             }

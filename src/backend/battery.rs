@@ -152,7 +152,8 @@ pub fn read_battery_info() -> Result<BatteryInfo, BackendError> {
         cycle_count,
         charge_threshold,
         voltage_mv: voltage_uv.map(|v| u32::try_from(v / 1000).unwrap_or(u32::MAX)),
-        current_ma: current_ua.map(|i| i32::try_from(i / 1000).unwrap_or(i32::MAX)),
+        current_ma: current_ua
+            .map(|i| i32::try_from(i / 1000).unwrap_or(if i < 0 { i32::MIN } else { i32::MAX })),
         power_w,
         time_remaining_h,
         on_ac,

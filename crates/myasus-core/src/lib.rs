@@ -84,23 +84,6 @@ impl Op {
         }
     }
 
-    /// The fixed sysfs path for operations that have one, or `None` for those
-    /// whose device must be resolved at runtime. Only [`Op::ChargeThreshold`] is
-    /// runtime-resolved (the battery enumerates as BAT0/BAT1/...); the daemon
-    /// builds its path with [`charge_threshold_path`]. Never caller-influenced.
-    pub fn fixed_path(self) -> Option<&'static str> {
-        match self {
-            Op::ChargeThreshold(_) => None,
-            Op::FanProfile(_) => Some(FAN_PROFILE_PATH),
-            Op::KeyboardBacklight(_) => Some(KBD_BACKLIGHT_PATH),
-        }
-    }
-
-    pub fn raw_value(self) -> u8 {
-        match self {
-            Op::ChargeThreshold(v) | Op::FanProfile(v) | Op::KeyboardBacklight(v) => v,
-        }
-    }
 }
 
 /// Resolve the main battery's sysfs directory under `root` (normally
@@ -361,18 +344,10 @@ mod tests {
     }
 
     #[test]
-    fn fixed_paths_per_variant() {
-        // The charge threshold is resolved at runtime (battery enumerates), so
-        // it has no fixed path; the other two are fixed.
-        assert_eq!(Op::ChargeThreshold(80).fixed_path(), None);
-        assert_eq!(Op::FanProfile(1).fixed_path(), Some(FAN_PROFILE_PATH));
-        assert_eq!(Op::KeyboardBacklight(2).fixed_path(), Some(KBD_BACKLIGHT_PATH));
-    }
-
-    #[test]
-    fn fixed_paths_are_absolute_sys_attributes() {
-        for op in [Op::FanProfile(1), Op::KeyboardBacklight(2)] {
-            let path = op.fixed_path().unwrap();
+    fn fixed_path_consts_are_absolute_sys_attributes() {
+        // Every write target the daemon can resolve sits under /sys; the unit's
+        // ReadWritePaths must cover each of these roots (see myasusd.service.in).
+        for path in [FAN_PROFILE_PATH, PLATFORM_PROFILE_PATH, KBD_BACKLIGHT_PATH] {
             assert!(path.starts_with("/sys/"), "{path} escapes /sys");
             assert!(Path::new(path).is_absolute());
         }
@@ -534,12 +509,5 @@ mod tests {
         if let Some(t) = threshold {
             std::fs::write(d.join(CHARGE_THRESHOLD_ATTR), format!("{t}\n")).unwrap();
         }
-    }
-
-    #[test]
-    fn raw_value_unwraps_inner() {
-        assert_eq!(Op::ChargeThreshold(80).raw_value(), 80);
-        assert_eq!(Op::FanProfile(2).raw_value(), 2);
-        assert_eq!(Op::KeyboardBacklight(3).raw_value(), 3);
     }
 }
