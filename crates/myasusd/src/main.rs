@@ -34,13 +34,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // before anything else; then serve requests for the rest of the session.
     helper::restore_state();
 
-    // Held (not `_`) so the connection lives until shutdown; dropping it would
-    // release the bus name.
-    let _connection = zbus::connection::Builder::system()?
+    // Held so the connection lives until shutdown; dropping it would release the
+    // bus name.
+    let connection = zbus::connection::Builder::system()?
         .name(DBUS_NAME)?
         .serve_at(DBUS_PATH, Helper)?
         .build()
         .await?;
+
+    // Re-apply settings on resume from suspend (the EC forgets the charge limit
+    // across sleep on many laptops).
+    helper::spawn_resume_listener(&connection).await;
 
     tracing::info!("myasusd up, owning {DBUS_NAME} at {DBUS_PATH}");
 

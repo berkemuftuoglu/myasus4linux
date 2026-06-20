@@ -5,6 +5,18 @@ use myasus_core::{DaemonState, Op};
 use zbus::message::Header;
 use zbus_polkit::policykit1::{AuthorityProxy, CheckAuthorizationFlags, Subject};
 
+/// Minimal client proxy for logind's sleep signal, used to re-apply the settings
+/// the EC forgets across suspend.
+#[zbus::proxy(
+    interface = "org.freedesktop.login1.Manager",
+    default_service = "org.freedesktop.login1",
+    default_path = "/org/freedesktop/login1"
+)]
+trait Login1Manager {
+    #[zbus(signal)]
+    fn prepare_for_sleep(&self, start: bool) -> zbus::Result<()>;
+}
+
 const ACTION_CHARGE: &str = "io.github.berkmuftuoglu.MyAsus4Linux.Helper.SetChargeThreshold";
 const ACTION_FAN: &str = "io.github.berkmuftuoglu.MyAsus4Linux.Helper.SetPerformanceProfile";
 const ACTION_KBD: &str = "io.github.berkmuftuoglu.MyAsus4Linux.Helper.SetKeyboardBacklight";
@@ -239,6 +251,44 @@ pub fn restore_state() {
             Err(e) => tracing::warn!("could not restore {op:?}: {e}"),
         }
     }
+}
+
+/// Subscribe to logind's `PrepareForSleep` and re-apply all persisted settings
+/// when the machine resumes (`start == false`). The EC drops the charge limit
+/// across suspend on many laptops, so without this our limit silently stops
+/// applying after the first sleep. Best-effort: if logind is unreachable we log
+/// and skip rather than fail startup.
+pub async fn spawn_resume_listener(connection: &zbus::Connection) {
+    let proxy = match Login1ManagerProxy::new(connection).await {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!("cannot reach logind for resume handling: {e}");
+            return;
+        }
+    };
+    let mut stream = match proxy.receive_prepare_for_sleep().await {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!("cannot watch PrepareForSleep: {e}");
+            return;
+        }
+    };
+    tokio::spawn(async move {
+        use futures_util::stream::StreamExt as _;
+        while let Some(signal) = stream.next().await {
+            match signal.args() {
+                // start == false means we are resuming, not going to sleep.
+                Ok(args) if !args.start => {
+                    tracing::info!("resumed from sleep; re-applying persisted settings");
+                    // restore_state does blocking sysfs writes; keep them off the
+                    // async executor.
+                    tokio::task::spawn_blocking(restore_state);
+                }
+                Ok(_) => {}
+                Err(e) => tracing::warn!("malformed PrepareForSleep signal: {e}"),
+            }
+        }
+    });
 }
 
 /// Ask polkit whether the caller (identified by their bus message) may perform
