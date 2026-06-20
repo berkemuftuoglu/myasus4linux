@@ -556,6 +556,17 @@ mod tests {
     }
 
     #[test]
+    fn resolvers_return_none_when_root_is_missing() {
+        // read_dir fails on a path that doesn't exist, so each resolver bails
+        // through `?` instead of panicking.
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("does-not-exist");
+        assert_eq!(battery_dir(&missing), None);
+        assert_eq!(kbd_backlight_path(&missing), None);
+        assert_eq!(on_external_power(&missing), None);
+    }
+
+    #[test]
     fn profile_token_mapping_round_trips() {
         assert_eq!(profile_from_token("balanced"), Some(0));
         assert_eq!(profile_from_token("performance"), Some(1));
