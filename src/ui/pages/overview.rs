@@ -247,11 +247,7 @@ impl SimpleComponent for Overview {
         widgets.mode_perf.set_group(Some(&widgets.mode_quiet));
 
         sender.input(OverviewInput::Tick);
-        let ticker = sender.clone();
-        glib::timeout_add_seconds_local(crate::ui::POLL_SECS, move || {
-            ticker.input(OverviewInput::Tick);
-            glib::ControlFlow::Continue
-        });
+        crate::ui::poll(&root, sender.input_sender(), || OverviewInput::Tick);
 
         ComponentParts { model, widgets }
     }

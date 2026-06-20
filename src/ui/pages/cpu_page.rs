@@ -135,11 +135,7 @@ impl SimpleComponent for CpuPage {
         widgets.cores_slot.append(&model.core_panel.root);
 
         sender.input(CpuInput::Tick);
-        let ticker = sender.clone();
-        glib::timeout_add_seconds_local(crate::ui::POLL_SECS, move || {
-            ticker.input(CpuInput::Tick);
-            glib::ControlFlow::Continue
-        });
+        crate::ui::poll(&root, sender.input_sender(), || CpuInput::Tick);
 
         ComponentParts { model, widgets }
     }

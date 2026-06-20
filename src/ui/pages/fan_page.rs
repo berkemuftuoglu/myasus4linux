@@ -176,11 +176,7 @@ impl SimpleComponent for FanPage {
         widgets.sensors_slot.append(&sensors.root);
 
         sender.input(FanInput::Tick);
-        let ticker = sender.clone();
-        glib::timeout_add_seconds_local(crate::ui::POLL_SECS, move || {
-            ticker.input(FanInput::Tick);
-            glib::ControlFlow::Continue
-        });
+        crate::ui::poll(&root, sender.input_sender(), || FanInput::Tick);
 
         ComponentParts { model, widgets }
     }

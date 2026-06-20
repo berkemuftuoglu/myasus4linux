@@ -275,11 +275,7 @@ impl SimpleComponent for BatteryPage {
         }
 
         sender.input(BatteryInput::LoadValues);
-        let ticker = sender.clone();
-        glib::timeout_add_seconds_local(crate::ui::POLL_SECS, move || {
-            ticker.input(BatteryInput::LoadValues);
-            glib::ControlFlow::Continue
-        });
+        crate::ui::poll(&root, sender.input_sender(), || BatteryInput::LoadValues);
         ComponentParts { model, widgets }
     }
 

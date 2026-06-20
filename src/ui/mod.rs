@@ -34,3 +34,28 @@ pub fn offload<M: Send + 'static>(
         let _ = input.send(job());
     });
 }
+
+/// Install a visibility-gated recurring poll: every [`POLL_SECS`], while `root`
+/// is mapped (its page is the visible stack child), send the message `make()`
+/// produces. Stops when the widget is dropped. Hidden pages then don't poll
+/// sysfs or spawn workers -- with the idle animation tick fixed, that per-page
+/// background polling is the dashboard's remaining idle cost. Pairs with
+/// [`offload`] and replaces the ticker boilerplate each page used to repeat.
+pub fn poll<M: 'static>(
+    root: &impl gtk::prelude::IsA<gtk::Widget>,
+    sender: &relm4::Sender<M>,
+    make: impl Fn() -> M + 'static,
+) {
+    use gtk::prelude::{ObjectExt, WidgetExt};
+    let weak = root.as_ref().downgrade();
+    let sender = sender.clone();
+    glib::timeout_add_seconds_local(POLL_SECS, move || {
+        let Some(widget) = weak.upgrade() else {
+            return glib::ControlFlow::Break;
+        };
+        if widget.is_mapped() {
+            let _ = sender.send(make());
+        }
+        glib::ControlFlow::Continue
+    });
+}

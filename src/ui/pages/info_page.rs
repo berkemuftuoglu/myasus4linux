@@ -88,11 +88,7 @@ impl SimpleComponent for InfoPage {
         widgets.table_slot.append(&table.root);
 
         sender.input(InfoInput::Tick);
-        let ticker = sender.clone();
-        glib::timeout_add_seconds_local(crate::ui::POLL_SECS, move || {
-            ticker.input(InfoInput::Tick);
-            glib::ControlFlow::Continue
-        });
+        crate::ui::poll(&root, sender.input_sender(), || InfoInput::Tick);
 
         ComponentParts { model, widgets }
     }
