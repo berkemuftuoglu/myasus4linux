@@ -122,7 +122,6 @@ async fn apply(
     op: Op,
 ) -> Result<(), HelperError> {
     authorize(connection, header, action_id).await?;
-    op.validate()?;
     // The writes are tiny sysfs + state-file writes (sub-millisecond), so do them
     // inline. We must NOT use tokio::task::spawn_blocking here: this handler runs
     // on zbus's own executor thread, which has no Tokio runtime, so spawn_blocking
@@ -137,6 +136,10 @@ async fn apply(
 /// blocking thread from `apply`, and directly at startup/resume from
 /// [`restore_state`].
 fn perform_write(op: Op) -> Result<(), HelperError> {
+    // Validate here so the write primitive itself enforces the range -- every
+    // caller (D-Bus handler, boot/resume restore, thermal guard) goes through it,
+    // and none of them can skip the check by construction.
+    op.validate()?;
     let (target, payload) = resolve_write(op)?;
     // Defence in depth: the path is never caller-supplied (fixed per Op, or built
     // from the kernel's own enumeration), but a privileged writer must still
@@ -248,27 +251,55 @@ fn current_profile_raw() -> Option<u8> {
 /// (never persisted) and never escalates privilege -- the daemon acts on its own.
 /// asusctl deliberately leaves this to the EC; we add it as a safety net.
 pub fn spawn_thermal_guard() {
+    // Restore the user's profile once it cools a few degrees below the limit, not
+    // exactly at it, so we don't flap on and off around the threshold.
+    const RESTORE_BELOW_C: f64 = myasus_core::THERMAL_LIMIT_C - 5.0;
+    const PERFORMANCE: u8 = 1;
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(5));
+        // The profile we forced away from, restored once things cool down.
+        let mut overridden: Option<u8> = None;
         loop {
             tick.tick().await;
-            let decision = tokio::task::spawn_blocking(|| {
-                let max = thermal_max_celsius()?;
-                let cur = current_profile_raw()?;
-                myasus_core::thermal_override(max, cur).map(|p| (max, p))
-            })
-            .await;
-            if let Ok(Some((max, profile))) = decision {
-                tracing::warn!("thermal guard: {max:.0}C over limit, forcing performance");
-                match tokio::task::spawn_blocking(move || perform_write(Op::FanProfile(profile))).await
-                {
-                    Ok(Ok(())) => {}
-                    Ok(Err(e)) => tracing::warn!("thermal guard could not force performance: {e}"),
-                    Err(e) => tracing::warn!("thermal guard write task panicked: {e}"),
+            let Ok(Some(max)) = tokio::task::spawn_blocking(thermal_max_celsius).await else {
+                continue;
+            };
+            if max >= myasus_core::THERMAL_LIMIT_C && overridden.is_none() {
+                let cur = tokio::task::spawn_blocking(current_profile_raw)
+                    .await
+                    .ok()
+                    .flatten();
+                if let Some(cur) = cur.filter(|&c| myasus_core::thermal_override(max, c).is_some()) {
+                    tracing::warn!("thermal guard: {max:.0}C over limit, forcing performance (was {cur})");
+                    if write_profile(PERFORMANCE).await {
+                        overridden = Some(cur);
+                    }
+                }
+            } else if max < RESTORE_BELOW_C {
+                if let Some(prev) = overridden.take() {
+                    tracing::info!("thermal guard: cooled to {max:.0}C, restoring profile {prev}");
+                    write_profile(prev).await;
                 }
             }
         }
     });
+}
+
+/// Write a fan profile from the thermal guard, off the async executor. Returns
+/// whether it succeeded. Transient (not persisted) and unprivileged-by-polkit:
+/// the daemon acts on its own for safety.
+async fn write_profile(value: u8) -> bool {
+    match tokio::task::spawn_blocking(move || perform_write(Op::FanProfile(value))).await {
+        Ok(Ok(())) => true,
+        Ok(Err(e)) => {
+            tracing::warn!("thermal guard write failed: {e}");
+            false
+        }
+        Err(e) => {
+            tracing::warn!("thermal guard write task panicked: {e}");
+            false
+        }
+    }
 }
 
 /// Record an op into the persisted state. Best-effort: a failed persist must
@@ -308,10 +339,8 @@ fn atomic_write(path: &Path, contents: &str) -> std::io::Result<()> {
 /// is logged and never aborts the rest.
 pub fn restore_state() {
     for op in load_state().ops() {
-        if op.validate().is_err() {
-            tracing::warn!("ignoring out-of-range persisted value: {op:?}");
-            continue;
-        }
+        // perform_write validates; an out-of-range persisted value surfaces here
+        // as a write error and is logged, not silently applied.
         match perform_write(op) {
             Ok(()) => tracing::info!("restored {op:?}"),
             Err(e) => tracing::warn!("could not restore {op:?}: {e}"),

@@ -360,9 +360,10 @@ impl Overview {
         crate::ui::builders::zones::update(&self.zone_meters, &zones);
         if let Some(hottest) = zones.iter().map(|z| z.celsius).reduce(f64::max) {
             self.zone_panel.set_corner(&format!("max {hottest:.0}°C"));
-            // Safeguard: a critically hot sensor forces maximum cooling,
-            // overriding whatever profile is selected. Warn once per hot episode
-            // (reset once it cools) so the toast doesn't repeat every tick.
+            // Safeguard feedback: the daemon's thermal guard forces maximum
+            // cooling headless and restores the profile when it cools; here we
+            // just tell the user, once per hot episode (reset once it cools), so
+            // there aren't two loops fighting over the same sysfs node.
             if safeguards::thermal_override(hottest, self.current_profile).is_some() {
                 if !self.thermal_warned {
                     self.thermal_warned = true;
@@ -370,7 +371,6 @@ impl Overview {
                         "{hottest:.0}°C is too hot, forcing Performance to cool down"
                     )));
                 }
-                sender.input(OverviewInput::SetMode(FanProfile::Performance));
             } else if hottest < safeguards::THERMAL_LIMIT_C {
                 self.thermal_warned = false;
             }
