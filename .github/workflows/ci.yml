@@ -107,7 +107,10 @@ jobs:
       - uses: taiki-e/install-action@cargo-llvm-cov
       - uses: Swatinem/rust-cache@v2
       - name: pure logic + privileged core must stay 100%
-        run: cargo llvm-cov --workspace --locked --fail-under-lines 100 --show-missing-lines --ignore-filename-regex 'src/(ui|main\.rs|config\.rs|backend)|crates/myasusd'
+        run: |
+          # Print uncovered lines for diagnosis (does not fail), then enforce 100%.
+          cargo llvm-cov --workspace --locked --show-missing-lines --ignore-filename-regex 'src/(ui|main\.rs|config\.rs|backend)|crates/myasusd'
+          cargo llvm-cov --workspace --locked --fail-under-lines 100 --ignore-filename-regex 'src/(ui|main\.rs|config\.rs|backend)|crates/myasusd'
 
   # Build what we actually ship: the full Meson build (GUI + daemon + data).
   meson-build:
